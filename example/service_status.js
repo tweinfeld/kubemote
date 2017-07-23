@@ -3,7 +3,7 @@ const
     util = require('util'),
     chalk = require('chalk'),
     kefir = require('kefir'),
-    Kubemote = require('../lib/kubemote');
+    Kubemote = require('../src/kubemote');
 
 let remote = new Kubemote();
 
