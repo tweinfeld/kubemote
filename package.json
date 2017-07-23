@@ -1,8 +1,8 @@
 {
   "name": "kubemote",
   "version": "1.0.0",
-  "description": "",
-  "main": "example/index.js",
+  "description": "Compact Kubernetes API library",
+  "main": "src/kubemote",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node ./example/service_status.js"
