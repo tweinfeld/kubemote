@@ -37,4 +37,4 @@ let reportStream = kefir
     });
 
 reportStream.onValue(console.log);
-reportStream.mapErrors(chalk.red).onError(console.error);
+reportStream.mapErrors(bad).onError(console.error);
