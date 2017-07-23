@@ -18,11 +18,11 @@ If `configuration` is omitted, Kubemote will try to use user's `.kube` files:
 let remote = new Kubemote();
 ```
 
-Manual configuration should include the fields `remote`, `host`, `port`, `certificate_authority`, `client_key`, and `client_certificate` i.e.:
+Manual configuration must include the fields `remote`, `host`, `port`, `certificate_authority`, `client_key`, and `client_certificate` i.e.:
 
 ```javascript
 let remote = new Kubemote({
-	host: "api.mykube.com",
+    host: "api.mykube.com",
     port: 8001,
     certificate_authority: [Buffer],
     client_key: [Buffer],

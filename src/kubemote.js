@@ -118,7 +118,8 @@ module.exports = class Kubemote extends EventEmitter {
                         "id": ["containerID", (rawId)=> _.last((rawId || "").match(/docker:\/\/([a-f0-9]*)/i))],
                         "image": "image",
                         "name": "name",
-                        "active": ["state", (obj)=> _.first(Object.keys(obj)) === "running"]
+                        "active": ["state", (obj)=> _.first(Object.keys(obj)) === "running"],
+                        "create": ["state.running.startedAt", asDate]
                     })
                 )]
             })))
