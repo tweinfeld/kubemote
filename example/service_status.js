@@ -32,7 +32,19 @@ let reportStream = kefir
     .map((dataSet)=> {
         return dataSet.map(({ name, id, container })=>[
             ` * Service "${highlight(name)}" (${[((count)=> count === 0 ? "No" : count)(container.length), "Containers"].join(' ')})`,
-            ...container.map(({ name, id, active, image, create })=>` |--> [${active ? good('Up') : bad('Down')}] Container "${name} <-> ${id.substr(0, 12)}" based on ${image}${active ? ` running for ${readableSince(create)}` : ""}`)
+            ...container.map(({ name, id, active, image, create })=> _([
+                    " |-->",
+                    `[${_.flow(highlight, active ? _.flow(good, _.constant('Up')) : _.flow(bad, _.constant('Down')))()}]`,
+                    `Container ${name}`,
+                    active && [
+                        "<->",
+                        highlight(id.substr(0, 12)),
+                        "based on",
+                        highlight(image),
+                        `running for ${readableSince(create)}`
+                    ].join(' ')
+                ]).compact().join(' ')
+            )
         ].join('\n')).join('\n')
     });
 
