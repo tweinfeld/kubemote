@@ -13,20 +13,36 @@ const
         return [60*60, 60, 1]
             .map((multiplier)=> {
                 let reduced = ~~(secondsElapsed / multiplier);
-                secondsElapsed -= reduced * multiplier;
+                secondsElapsed -= (reduced * multiplier);
                 return reduced;
             })
-            .map(_.partial(_.pad, _, 2, "0")).join(':');
+            .map(_.partial(_.padStart, _, 2, "0")).join(':');
     };
 
 let reportStream = kefir
     .fromPromise(remote.getServices())
+    .map((serviceList)=> serviceList["items"].map((item)=> _.zipObject(["name", "selector"], _.at(item, ["metadata.name", "spec.selector"]))))
     .flatMap((services)=> {
         return kefir.combine(
-            services.map(
-                ({ name, selector })=>
-                    kefir.fromPromise(selector ? remote.getPods(selector) : Promise.resolve([])).map((pods)=> ({ name, container: _.flatten(_.map(pods, 'container')) }))
-            )
+            services
+                .map(({ name, selector })=> {
+                    return kefir
+                        .fromPromise(selector ? remote.getPods(selector) : Promise.resolve({ items: [] }))
+                        .map((podList) => podList["items"].map((item) => ({
+                            name: _.get(item, 'metadata.name'),
+                            container: _.get(item, 'status.containerStatuses', []).map((containerItem)=> {
+                                return {
+                                    "create": new Date(_.get(containerItem, "state.running.startedAt")),
+                                    "id": _.last(_.get(containerItem, 'containerID', '').match(/docker:\/\/([a-f0-9]*)/i)),
+                                    "active": !!_.get(containerItem, 'state.running'),
+                                    "name": _.get(containerItem, 'name'),
+                                    "image": _.get(containerItem, 'image')
+                                }
+
+                            })
+                        })))
+                        .map((pods) => ({name, container: _.flatten(_.map(pods, 'container'))}))
+                })
         )
     })
     .map((dataSet)=> {
