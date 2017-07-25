@@ -5,34 +5,37 @@ const
     path = require('path'),
     kefir = require('kefir'),
     https = require('https'),
-    util = require('util'),
     concatStream = require('concat-stream'),
+    splitStream = require('split'),
     querystring = require('querystring'),
     yaml = require('js-yaml'),
     EventEmitter = require('events').EventEmitter;
 
 const
     API_MAJOR_VERSION = 1,
-    REQUEST = Symbol('Request');
+    REQUEST = Symbol('Request'),
+    API_NAMESPACE = {
+        base: (namespace)=> `/api/v${API_MAJOR_VERSION.toString()}/namespaces/${namespace}`,
+        infrastructure: ()=> `/api/v${API_MAJOR_VERSION.toString()}`,
+        batch: (namespace, watch = false)=> `/apis/batch/v${API_MAJOR_VERSION.toString()}/${ watch ? "watch/": "" }namespaces/${namespace}`
+    };
 
 const
-    asDate = (str)=> new Date(str),
-    formatItems = _.curry((mapper = _.identity, result)=> _.get(result, 'items', []).map(mapper), 2),
-    jsonTemplate = (template)=> (source)=> _.reduce(template, (ac, v, k)=> {
-        let [ sourceField, transformer = _.identity ] = _.flatten([v]);
-        return _.set(ac, k, transformer(_.get(source, sourceField)));
-    }, {}),
     serializeSelectorQuery = (query)=> _.map(query, (v, k)=>[k, v].join('=')).join(','),
     requestFactory = function(baseConfig){
         return function({
-            namespace = "default",
             method = "GET",
             path = "/",
-            qs = {}
+            qs = {},
+            headers = {},
+            api_namespace = "base",
+            namespace = "default",
+            watch = false
         }){
             return https.request(_.assign(baseConfig, {
+                headers,
                 method,
-                path: [`/api/v${API_MAJOR_VERSION.toString()}/namespaces/${namespace}/${_(path).split('/').compact().join('/')}`, querystring.stringify(qs)].join('?')
+                path: [`${API_NAMESPACE[api_namespace](namespace, watch)}/${_(path).split('/').compact().join('/')}`, querystring.stringify(qs)].join('?')
             }));
         };
     };
@@ -45,14 +48,17 @@ const endRequestBufferResponse = (request, content)=> {
         .take(1)
         .takeErrors(1)
         .takeUntilBy(kefir.fromEvents(request, 'end').take(1))
-        .flatMap((res)=> kefir.fromCallback((cb)=> res.pipe(concatStream({ encoding: "string" }, cb))))
-        .map(JSON.parse)
+        .flatMap((res)=>{
+            return kefir
+                .fromCallback((cb)=> res.pipe(concatStream({ encoding: "string" }, cb)))
+                .flatMap(~~(res.statusCode / 100) === 2 ? kefir.constant : kefir.constantError);
+        });
 };
 
 module.exports = class Kubemote extends EventEmitter {
 
     constructor(config){
-        super(); // TBD: Supply events for "watch=true" updates
+        super();
         this[REQUEST] = requestFactory(config ? Kubemote.manualConfigResolver(config) : Kubemote.homeDirConfigResolver());
     }
 
@@ -88,41 +94,53 @@ module.exports = class Kubemote extends EventEmitter {
         );
     }
 
-    getServices(selector, namespace = "default"){
-        let request = this[REQUEST]({ namespace, path: "/services", qs: { includeUninitialized: true, watch: false, labelSelector: serializeSelectorQuery(selector) } });
+    getServices(selector){
+        let request = this[REQUEST]({ path: "/services", qs: { includeUninitialized: true, watch: false, labelSelector: serializeSelectorQuery(selector) } });
         return endRequestBufferResponse(request)
-            .map(formatItems(jsonTemplate({
-                "id": "metadata.uid",
-                "name": "metadata.name",
-                "create": ["metadata.creationTimestamp", asDate],
-                "selector": "spec.selector",
-                "port": ["spec.ports", jsonTemplate({
-                    "name": "name",
-                    "service_port": "port",
-                    "container_port": "targetPort",
-                    "protocol": "protocol"
-                })]
-            })))
+            .map(JSON.parse)
             .toPromise();
     }
 
-    getPods(selector, namespace = "default"){
-        let request = this[REQUEST]({ namespace, path: "/pods", qs: { includeUninitialized: true, watch: false, labelSelector: serializeSelectorQuery(selector) } });
+    getPods(selector){
+        let request = this[REQUEST]({ path: "/pods", qs: { includeUninitialized: true, watch: false, labelSelector: serializeSelectorQuery(selector) } });
         return endRequestBufferResponse(request)
-            .map(formatItems(jsonTemplate({
-                "id": "metadata.uid",
-                "name": "metadata.name",
-                "create": ["metadata.creationTimestamp", asDate],
-                "container": ["status.containerStatuses", (containers)=> containers.map(
-                    jsonTemplate({
-                        "id": ["containerID", (rawId)=> _.last((rawId || "").match(/docker:\/\/([a-f0-9]*)/i))],
-                        "image": "image",
-                        "name": "name",
-                        "active": ["state", (obj)=> _.first(Object.keys(obj)) === "running"],
-                        "create": ["state.running.startedAt", asDate]
-                    })
-                )]
-            })))
+            .map(JSON.parse)
             .toPromise();
+    }
+
+    getPodLogs({ podName }){
+        let request = this[REQUEST]({ path: `/pods/${podName}/log` });
+        return endRequestBufferResponse(request).toPromise();
+    }
+
+    createJob(jobSpecJson){
+        let byteSpec = Buffer.from(JSON.stringify(jobSpecJson), 'utf8');
+        let request = this[REQUEST]({ method: "POST", api_namespace: "batch", path: "/jobs", headers: { "Content-Type": "application/json", "Content-Length": byteSpec.length } });
+        return endRequestBufferResponse(request, byteSpec)
+            .map(JSON.parse)
+            .toPromise();
+    }
+
+    watchJob({ jobName }){
+        let request = this[REQUEST]({ method: "GET", watch: true, api_namespace: "batch", path: `/jobs/${jobName}` });
+        let updateStream = kefir
+            .fromEvents(request, 'response')
+            .takeUntilBy(kefir.fromEvents(request, 'connect', (res, socket)=> socket).flatMap((socket)=> kefir.fromEvents(socket, 'end').take(1)))
+            .flatMap((response)=> kefir.fromEvents(response.pipe(splitStream()), 'data'))
+            .map(JSON.parse);
+
+        request.end();
+        updateStream.onValue((payload)=> this.emit('watch', payload));
+        return updateStream.take(1).takeErrors(1).toPromise();
+    }
+
+    deleteJob({ jobName }){
+        let request = this[REQUEST]({ method: "DELETE", api_namespace: "batch", path: `/jobs/${jobName}` });
+        return endRequestBufferResponse(request).map(JSON.parse).toPromise();
+    }
+
+    getNodes(){
+        let request = this[REQUEST]({ method: "GET", api_namespace: "infrastructure", path: `/nodes` });
+        return endRequestBufferResponse(request).map(JSON.parse).toPromise();
     }
 };
