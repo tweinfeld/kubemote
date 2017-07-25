@@ -46,13 +46,13 @@ const endRequestBufferResponse = (request, content)=> {
         .fromEvents(request, 'response')
         .merge(kefir.fromEvents(request, 'error').flatMap(kefir.constantError))
         .take(1)
-        .takeErrors(1)
         .takeUntilBy(kefir.fromEvents(request, 'end').take(1))
         .flatMap((res)=>{
             return kefir
                 .fromCallback((cb)=> res.pipe(concatStream({ encoding: "string" }, cb)))
                 .flatMap(~~(res.statusCode / 100) === 2 ? kefir.constant : kefir.constantError);
-        });
+        })
+        .takeErrors(1);
 };
 
 module.exports = class Kubemote extends EventEmitter {
@@ -135,7 +135,7 @@ module.exports = class Kubemote extends EventEmitter {
     }
 
     deleteJob({ jobName }){
-        let request = this[REQUEST]({ method: "DELETE", api_namespace: "batch", path: `/jobs/${jobName}` });
+        let request = this[REQUEST]({ method: "DELETE", api_namespace: "batch", qs: { gracePeriodSeconds: 0 }, path: `/jobs/${jobName}` });
         return endRequestBufferResponse(request).map(JSON.parse).toPromise();
     }
 
