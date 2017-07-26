@@ -77,29 +77,38 @@ module.exports = class Kubemote extends EventEmitter {
         };
     }
 
-    static homeDirConfigResolver({ contextName = "minikube" } = {}){
-        const findByName = (name)=> _.partial(_.find, _, { name });
+    static homeDirConfigResolver({ contextName } = {}){
+
+        const CONFIGURATION_READERS = [
+            { keys: ["cluster.certificate-authority-data"],  format: _.flow(([str])=> Buffer.from(str, 'base64'), (buffer)=> ({ ca: buffer })) },
+            { keys: ["cluster.certificate-authority"], format: _.flow(([filename])=>fs.readFileSync(filename), (buffer)=> ({ ca: buffer })) },
+            { keys: ["user.client-certificate"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ cert: buffer })) },
+            { keys: ["user.client-key"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ key: buffer })) },
+            { keys: ["cluster.server"], format: ([value])=> _.defaults(_.zipObject(["host", "port"], _.at(value.match(/https?:\/\/([^:]+)(:([0-9]+))?/), ["1", "3"])), { "port": 80 }) },
+            { keys: ["user.username", "user.password"], format: _.flow(([username, password])=> [username, password].join(':'), (str)=> Buffer.from(str, 'utf8').toString('base64'), (authentication)=>({ headers: { "Authenticate": ["Basic", authentication].join(' ') } })) }
+        ];
+
         let
-            { ["current-context"]: currentContext, contexts, clusters, users, apiVersion } = _.flow(
+            { users, clusters, contexts, ["current-context"]: defaultContext } = _.flow(
                 _.partial(path.resolve, _, '.kube', 'config'),
                 _.partial(fs.readFileSync, _, { encoding: "utf8" }),
                 yaml.safeLoad
-            )(os.homedir()),
-            { cluster: clusterName, user: userName } = _.get(findByName((contextName || currentContext), contexts), 'context', {}),
-            cluster = (clusterName ? findByName(clusterName) : _.first)(clusters),
-            user = (userName ? findByName(userName) : _.first)(users);
+            )(os.homedir());
 
-        if((apiVersion.match(/v([0-9]+)/)||[]).slice(1).map(Number).pop() !== API_MAJOR_VERSION) throw(new Error('Unsupported api version'));
+        let config = _(contexts)
+            .chain()
+            .groupBy('name')
+            .mapValues((values)=>{
+                let { cluster: clusterName, user: userName } = _.get(values, '0.context');
+                return {
+                    user: _.get(_.find(users, ({name}) => userName === name), 'user'),
+                    cluster: _.get(_.find(clusters, ({name}) => clusterName === name), 'cluster')
+                };
+            })
+            .get(contextName || defaultContext)
+            .value();
 
-        return _.assign(
-            _.defaults(_.zipObject(["host", "port"], _.at(_.get(cluster, 'cluster.server', '').match(/https?:\/\/([^:]+)(:([0-9]+))?/), ["1", "3"])), { "host": 80 }),
-            { "ca":
-                (function(key){
-                    return (clusterConfigurationResolvers[key] || _.identity)(_.get(cluster, key));
-                })(Object.keys(clusterConfigurationResolvers).find((key)=> _.has(cluster, key)))
-            },
-            _.zipObject(["cert", "key"] , _.at(user, ["user.client-certificate", "user.client-key"]).map(_.unary(fs.readFileSync)))
-        );
+        return CONFIGURATION_READERS.reduce((ac, { keys, format })=> _.assign(ac, keys.every((keyName)=> _.has(config, keyName)) && format(_.at(config, keys))), {})
     }
 
     getServices(selector){
