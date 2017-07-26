@@ -55,6 +55,11 @@ const endRequestBufferResponse = (request, content)=> {
         .takeErrors(1);
 };
 
+const clusterConfigurationResolvers = {
+    "cluster.certificate-authority-data": (data)=> Buffer.from(data, 'base64'),
+    "cluster.certificate-authority": fs.readFileSync
+};
+
 module.exports = class Kubemote extends EventEmitter {
 
     constructor(config){
@@ -72,25 +77,28 @@ module.exports = class Kubemote extends EventEmitter {
         };
     }
 
-    static homeDirConfigResolver({ clusterName, userName } = {}){
+    static homeDirConfigResolver({ contextName = "minikube" } = {}){
         const findByName = (name)=> _.partial(_.find, _, { name });
         let
-            { clusters, users, apiVersion } = _.flow(
+            { ["current-context"]: currentContext, contexts, clusters, users, apiVersion } = _.flow(
                 _.partial(path.resolve, _, '.kube', 'config'),
                 _.partial(fs.readFileSync, _, { encoding: "utf8" }),
                 yaml.safeLoad
             )(os.homedir()),
+            { cluster: clusterName, user: userName } = _.get(findByName((contextName || currentContext), contexts), 'context', {}),
             cluster = (clusterName ? findByName(clusterName) : _.first)(clusters),
             user = (userName ? findByName(userName) : _.first)(users);
 
         if((apiVersion.match(/v([0-9]+)/)||[]).slice(1).map(Number).pop() !== API_MAJOR_VERSION) throw(new Error('Unsupported api version'));
 
         return _.assign(
-            _.zipObject(["host", "port"], _.get(cluster, 'cluster.server', '').match(/https?:\/\/([^:]+):([0-9]+)/).slice(1)),
-            _.zipObject(["ca", "cert", "key"] , [].concat(
-                _.at(cluster, ["cluster.certificate-authority"]),
-                _.at(user, ["user.client-certificate", "user.client-key"])
-            ).map(_.unary(fs.readFileSync)))
+            _.defaults(_.zipObject(["host", "port"], _.at(_.get(cluster, 'cluster.server', '').match(/https?:\/\/([^:]+)(:([0-9]+))?/), ["1", "3"])), { "host": 80 }),
+            { "ca":
+                (function(key){
+                    return (clusterConfigurationResolvers[key] || _.identity)(_.get(cluster, key));
+                })(Object.keys(clusterConfigurationResolvers).find((key)=> _.has(cluster, key)))
+            },
+            _.zipObject(["cert", "key"] , _.at(user, ["user.client-certificate", "user.client-key"]).map(_.unary(fs.readFileSync)))
         );
     }
 
