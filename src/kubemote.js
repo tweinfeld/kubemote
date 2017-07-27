@@ -32,7 +32,7 @@ const
             namespace = "default",
             watch = false
         }){
-            return https.request(_.assign(baseConfig, {
+            return https.request(_.merge(baseConfig, {
                 headers,
                 method,
                 path: [`${API_NAMESPACE[api_namespace](namespace, watch)}/${_(path).split('/').compact().join('/')}`, querystring.stringify(qs)].join('?')
@@ -77,36 +77,31 @@ module.exports = class Kubemote extends EventEmitter {
         };
     }
 
-    static homeDirConfigResolver({ contextName } = {}){
+    static homeDirConfigResolver({ file = path.resolve(os.homedir(), '.kube', 'config'), contextName } = {}){
 
         const CONFIGURATION_READERS = [
             { keys: ["cluster.certificate-authority-data"],  format: _.flow(([str])=> Buffer.from(str, 'base64'), (buffer)=> ({ ca: buffer })) },
             { keys: ["cluster.certificate-authority"], format: _.flow(([filename])=>fs.readFileSync(filename), (buffer)=> ({ ca: buffer })) },
             { keys: ["user.client-certificate"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ cert: buffer })) },
             { keys: ["user.client-key"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ key: buffer })) },
-            { keys: ["cluster.server"], format: ([value])=> _.defaults(_.zipObject(["host", "port"], _.at(value.match(/https?:\/\/([^:]+)(:([0-9]+))?/), ["1", "3"])), { "port": 80 }) },
-            { keys: ["user.username", "user.password"], format: _.flow(([username, password])=> [username, password].join(':'), (str)=> Buffer.from(str, 'utf8').toString('base64'), (authentication)=>({ headers: { "Authenticate": ["Basic", authentication].join(' ') } })) }
+            { keys: ["cluster.server"], format: ([value])=> _.defaults(_.zipObject(["host", "port"], _.at(value.match(/https?:\/\/([^:]+)(:([0-9]+))?/), ["1", "3"])), { "port": 443 }) },
+            { keys: ["user.username", "user.password"], format: _.flow(([username, password])=> [username, password].join(':'), (str)=> Buffer.from(str, 'utf8').toString('base64'), (authentication)=>({ headers: { "Authorization": ["Basic", authentication].join(' ') } })) }
         ];
 
         let
-            { users, clusters, contexts, ["current-context"]: defaultContext } = _.flow(
-                _.partial(path.resolve, _, '.kube', 'config'),
-                _.partial(fs.readFileSync, _, { encoding: "utf8" }),
-                yaml.safeLoad
-            )(os.homedir());
-
-        let config = _(contexts)
-            .chain()
-            .groupBy('name')
-            .mapValues((values)=>{
-                let { cluster: clusterName, user: userName } = _.get(values, '0.context');
-                return {
-                    user: _.get(_.find(users, ({name}) => userName === name), 'user'),
-                    cluster: _.get(_.find(clusters, ({name}) => clusterName === name), 'cluster')
-                };
-            })
-            .get(contextName || defaultContext)
-            .value();
+            { users, clusters, contexts, ["current-context"]: defaultContext } = yaml.safeLoad(fs.readFileSync(file, 'utf8')),
+            config = _(contexts)
+                .chain()
+                .groupBy('name')
+                .mapValues((values)=>{
+                    let { cluster: clusterName, user: userName } = _.get(values, '0.context');
+                    return {
+                        user: _.get(_.find(users, ({name}) => userName === name), 'user'),
+                        cluster: _.get(_.find(clusters, ({name}) => clusterName === name), 'cluster')
+                    };
+                })
+                .get(contextName || defaultContext)
+                .value();
 
         return CONFIGURATION_READERS.reduce((ac, { keys, format })=> _.assign(ac, keys.every((keyName)=> _.has(config, keyName)) && format(_.at(config, keys))), {})
     }
