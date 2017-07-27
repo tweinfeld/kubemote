@@ -2,6 +2,7 @@ const
     _ = require('lodash'),
     fs = require('fs'),
     os = require('os'),
+    url = require('url'),
     path = require('path'),
     kefir = require('kefir'),
     https = require('https'),
@@ -84,7 +85,7 @@ module.exports = class Kubemote extends EventEmitter {
             { keys: ["cluster.certificate-authority"], format: _.flow(([filename])=>fs.readFileSync(filename), (buffer)=> ({ ca: buffer })) },
             { keys: ["user.client-certificate"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ cert: buffer })) },
             { keys: ["user.client-key"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ key: buffer })) },
-            { keys: ["cluster.server"], format: ([value])=> _.defaults(_.zipObject(["host", "port"], _.at(value.match(/https?:\/\/([^:]+)(:([0-9]+))?/), ["1", "3"])), { "port": 443 }) },
+            { keys: ["cluster.server"], format: _.flow(_.first, url.parse, ({ host, port, protocol })=> ({ protocol, host: _.first(host.match(/[^:]+/)), port: (port || (protocol === "https:" ? 443 : 80)) })) },
             { keys: ["user.username", "user.password"], format: _.flow(([username, password])=> [username, password].join(':'), (str)=> Buffer.from(str, 'utf8').toString('base64'), (authentication)=>({ headers: { "Authorization": ["Basic", authentication].join(' ') } })) }
         ];
 
@@ -96,14 +97,14 @@ module.exports = class Kubemote extends EventEmitter {
                 .mapValues((values)=>{
                     let { cluster: clusterName, user: userName } = _.get(values, '0.context');
                     return {
-                        user: _.get(_.find(users, ({name}) => userName === name), 'user'),
-                        cluster: _.get(_.find(clusters, ({name}) => clusterName === name), 'cluster')
+                        user: _.get(_.find(users, ({ name }) => userName === name), 'user'),
+                        cluster: _.get(_.find(clusters, ({ name }) => clusterName === name), 'cluster')
                     };
                 })
                 .get(contextName || defaultContext)
                 .value();
 
-        return CONFIGURATION_READERS.reduce((ac, { keys, format })=> _.assign(ac, keys.every((keyName)=> _.has(config, keyName)) && format(_.at(config, keys))), {})
+        return CONFIGURATION_READERS.reduce((ac, { keys, format })=> _.assign(ac, keys.every((keyName)=> _.has(config, keyName)) && format(_.at(config, keys))), {});
     }
 
     getServices(selector){
