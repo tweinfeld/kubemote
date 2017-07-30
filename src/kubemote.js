@@ -78,7 +78,7 @@ module.exports = class Kubemote extends EventEmitter {
         };
     }
 
-    static homeDirConfigResolver({ file = path.resolve(os.homedir(), '.kube', 'config'), contextName } = {}){
+    static homeDirConfigResolver({ file = path.resolve(os.homedir(), '.kube', 'config'), context: contextName } = {}){
 
         const CONFIGURATION_READERS = [
             { keys: ["cluster.certificate-authority-data"],  format: _.flow(([str])=> Buffer.from(str, 'base64'), (buffer)=> ({ ca: buffer })) },
@@ -152,12 +152,12 @@ module.exports = class Kubemote extends EventEmitter {
     }
 
     deleteJob({ jobName }){
-        let request = this[REQUEST]({ method: "DELETE", api_namespace: "batch", path: `/jobs/${jobName}` }); //qs: { gracePeriodSeconds: 0 },
+        let request = this[REQUEST]({ method: "DELETE", api_namespace: "batch", path: `/jobs/${jobName}`, headers: { "Accept": "application/json", "Content-Length": 0 }, qs: { gracePeriodSeconds: 0 } });
         return endRequestBufferResponse(request).map(JSON.parse).toPromise();
     }
 
     getNodes(){
-        let request = this[REQUEST]({ method: "GET", api_namespace: "infrastructure", path: `/nodes` });
+        let request = this[REQUEST]({ method: "GET", api_namespace: "infrastructure", path: "/nodes" });
         return endRequestBufferResponse(request).map(JSON.parse).toPromise();
     }
 };

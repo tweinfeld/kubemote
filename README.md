@@ -9,23 +9,31 @@ A compact Kubernetes API library
 # Usage
 
 ```javascript
-let remote = new Kubemote(configuration);
+let remote = new Kubemote([configuration]);
 ```
 
-If `configuration` is omitted, Kubemote will try to use user's `.kube` files:
+"Configuration" is comprised of:
+
+  * `type` - Either `homeDir` or `manual`
+  * `config` - The configuration, respective to the selected `type`
 
 ```javascript
-let remote = new Kubemote();
+let remote = new Kubemote({ type: "homeDir" });
 ```
 
-Manual configuration must include the fields `remote`, `host`, `port`, `certificate_authority`, `client_key`, and `client_certificate` i.e.:
+"Type" configuration can contain a `context` field. When it's omitted, the default context will be used.
+
+"Manual" configuration must include the fields `remote`, `host`, `port`, `certificate_authority`, `client_key`, and `client_certificate` i.e.:
 
 ```javascript
 let remote = new Kubemote({
-    host: "api.mykube.com",
-    port: 8001,
-    certificate_authority: [Buffer],
-    client_key: [Buffer],
-    client_certificate: [Buffer]
+    type: "manual",
+    config: {
+      host: "api.mykube.com",
+      port: 8001,
+      certificate_authority: [Buffer],
+      client_key: [Buffer],
+      client_certificate: [Buffer]
+  }
 });
 ```

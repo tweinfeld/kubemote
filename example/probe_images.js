@@ -7,10 +7,11 @@ const
 
 let remote = new Kubemote({ type: "homeDir" });
 
-kefir
+let probeStream = kefir
     .fromPromise(remote.getNodes())
     .map((podList)=> _(podList["items"]).map('metadata.name').uniq().value())
     .flatMap((nodeNameList)=> {
+        console.log('Processing %d nodes..', nodeNameList.length);
         return kefir.combine(
             nodeNameList.map((nodeName)=> {
                 let jobName = _(uuid.v4()).split('-').first();
@@ -85,6 +86,7 @@ kefir
             })
         )
     })
-    .take(1)
-    .map((images)=> _(images).chain().flatten().groupBy('Id').mapValues(_.first).keys().value())
-    .onValue((images)=> console.log(["The following images are available throughout Kubernetes:", ...images.map((image)=> ` ${image}`)].join('\n')));
+    .map((images)=> _(images).chain().flatten().groupBy('Id').mapValues(_.first).keys().value());
+
+probeStream.onValue((images)=> console.log(["The following images are available throughout Kubernetes:", ...images.map((image)=> ` ${image}`)].join('\n')));
+probeStream.onError(console.warn);
