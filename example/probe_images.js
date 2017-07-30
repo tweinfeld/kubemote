@@ -6,7 +6,7 @@ const
     uuid = require('uuid');
 
 let
-    remote = new Kubemote(),
+    remote = new Kubemote({ type: "homeDir" }),
     jobName = _(uuid.v4()).split('-').first();
 
 kefir
@@ -50,7 +50,7 @@ kefir
                                                     ]
                                                 }
                                             ],
-                                            "nodeName": "minikube",
+                                            nodeName,
                                             "restartPolicy": "Never",
                                             "volumes": [
                                                 {

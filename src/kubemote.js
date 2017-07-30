@@ -63,9 +63,9 @@ const clusterConfigurationResolvers = {
 
 module.exports = class Kubemote extends EventEmitter {
 
-    constructor(config){
+    constructor({ type = "manual", config = {} } = {}){
         super();
-        this[REQUEST] = requestFactory(config ? Kubemote.manualConfigResolver(config) : Kubemote.homeDirConfigResolver());
+        this[REQUEST] = requestFactory(Kubemote[[type, "ConfigResolver"].join('')](config));
     }
 
     static manualConfigResolver({ host, port, certificate_authority, client_key, client_certificate }){
@@ -86,7 +86,8 @@ module.exports = class Kubemote extends EventEmitter {
             { keys: ["user.client-certificate"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ cert: buffer })) },
             { keys: ["user.client-key"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ key: buffer })) },
             { keys: ["cluster.server"], format: _.flow(_.first, url.parse, ({ host, port, protocol })=> ({ protocol, host: _.first(host.match(/[^:]+/)), port: (port || (protocol === "https:" ? 443 : 80)) })) },
-            { keys: ["user.username", "user.password"], format: _.flow(([username, password])=> [username, password].join(':'), (str)=> Buffer.from(str, 'utf8').toString('base64'), (authentication)=>({ headers: { "Authorization": ["Basic", authentication].join(' ') } })) }
+            { keys: ["user.username", "user.password"], format: _.flow(([username, password])=> [username, password].join(':'), (str)=> Buffer.from(str, 'utf8').toString('base64'), (authentication)=>({ headers: { "Authorization": ["Basic", authentication].join(' ') } })) },
+            { keys: ["cluster.insecure-skip-tls-verify"], format: ([value])=>({ rejectUnauthorized: !value }) }
         ];
 
         let
