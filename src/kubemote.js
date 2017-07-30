@@ -136,20 +136,23 @@ module.exports = class Kubemote extends EventEmitter {
     }
 
     watchJob({ jobName }){
-        let request = this[REQUEST]({ method: "GET", watch: true, api_namespace: "batch", path: `/jobs/${jobName}` });
+        let
+            request = this[REQUEST]({ method: "GET", watch: true, api_namespace: "batch", path: `/jobs/${jobName}` }),
+            destroy = _.noop;
+
         let updateStream = kefir
             .fromEvents(request, 'response')
-            .takeUntilBy(kefir.fromEvents(request, 'connect', (res, socket)=> socket).flatMap((socket)=> kefir.fromEvents(socket, 'end').take(1)))
-            .flatMap((response)=> kefir.fromEvents(response.pipe(splitStream()), 'data'))
-            .map(JSON.parse);
+            .flatMap((response)=> kefir.fromEvents(response.pipe(splitStream(null, null, { trailing: false })), 'data'))
+            .map(JSON.parse)
+            .takeUntilBy(kefir.fromEvents(request, 'socket').take(1).flatMap((socket)=> { destroy = _.once(()=> { socket.destroy(); }); return kefir.merge(["close", "error"].map((eventName)=> kefir.fromEvents(socket, eventName))).take(1); }))
 
         request.end();
         updateStream.onValue((payload)=> this.emit('watch', payload));
-        return updateStream.take(1).takeErrors(1).toPromise();
+        return Promise.resolve(()=>{ destroy(); });
     }
 
     deleteJob({ jobName }){
-        let request = this[REQUEST]({ method: "DELETE", api_namespace: "batch", qs: { gracePeriodSeconds: 0 }, path: `/jobs/${jobName}` });
+        let request = this[REQUEST]({ method: "DELETE", api_namespace: "batch", path: `/jobs/${jobName}` }); //qs: { gracePeriodSeconds: 0 },
         return endRequestBufferResponse(request).map(JSON.parse).toPromise();
     }
 

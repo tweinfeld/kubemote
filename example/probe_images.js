@@ -5,9 +5,7 @@ const
     kefir = require('kefir'),
     uuid = require('uuid');
 
-let
-    remote = new Kubemote({ type: "homeDir" }),
-    jobName = _(uuid.v4()).split('-').first();
+let remote = new Kubemote({ type: "homeDir" });
 
 kefir
     .fromPromise(remote.getNodes())
@@ -15,6 +13,7 @@ kefir
     .flatMap((nodeNameList)=> {
         return kefir.combine(
             nodeNameList.map((nodeName)=> {
+                let jobName = _(uuid.v4()).split('-').first();
                 return kefir
                     .concat([
                         kefir.fromPromise(remote.createJob({
@@ -66,24 +65,26 @@ kefir
                                 }
                             }
                         )).ignoreValues(),
-                        kefir.fromPromise(remote.watchJob({ jobName })).ignoreValues(),
-                        kefir
-                            .fromEvents(remote, 'watch')
-                            .filter(_.matches({ object: { kind: "Job", metadata: { name: jobName }} }))
-                            .filter((watchNotification)=> _.get(watchNotification, 'object.status.completionTime'))
-                            .take(1)
-                            .flatMap((watchNotification)=> _.get(watchNotification, 'object.status.succeeded') ?
-                                kefir.fromPromise(remote.getPods({ "job-name": jobName })).map(_.partial(_.get, _, 'items.0.metadata.name')) :
-                                kefir.constantError('Failed to complete task'))
-                            .flatMap((podName)=> kefir.fromPromise(remote.getPodLogs({ podName })))
-                            .map(JSON.parse),
+                        kefir.fromPromise(remote.watchJob({ jobName })).flatMap((stopWatch)=>{
+                            let stream = kefir
+                                .fromEvents(remote, 'watch')
+                                .filter(_.matches({ object: { kind: "Job", metadata: { name: jobName }} }))
+                                .filter((watchNotification)=> _.get(watchNotification, 'object.status.completionTime'))
+                                .take(1)
+                                .flatMap((watchNotification)=> _.get(watchNotification, 'object.status.succeeded') ?
+                                    kefir.fromPromise(remote.getPods({ "job-name": jobName })).map(_.partial(_.get, _, 'items.0.metadata.name')) :
+                                    kefir.constantError('Failed to complete task'))
+                                .flatMap((podName)=> kefir.fromPromise(remote.getPodLogs({ podName })))
+                                .map(JSON.parse);
+
+                            stream.onEnd(stopWatch);
+                            return stream;
+                        }),
                         kefir.later().flatMap(()=> kefir.fromPromise(remote.deleteJob({ jobName }))).ignoreValues()
                     ])
             })
         )
     })
-    .map(_.flatten)
-    .map(_.partial(_.groupBy, _, 'Id'))
-    .map(_.partial(_.mapValues, _, _.first)) // Peek here to see all images info
-    .map(Object.keys)
+    .take(1)
+    .map((images)=> _(images).chain().flatten().groupBy('Id').mapValues(_.first).keys().value())
     .onValue((images)=> console.log(["The following images are available throughout Kubernetes:", ...images.map((image)=> ` ${image}`)].join('\n')));
