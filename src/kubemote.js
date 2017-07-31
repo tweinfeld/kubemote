@@ -14,61 +14,16 @@ const
 
 const
     API_MAJOR_VERSION = 1,
-    REQUEST = Symbol('Request'),
-    API_NAMESPACE = {
-        base: (namespace)=> `/api/v${API_MAJOR_VERSION.toString()}/namespaces/${namespace}`,
-        infrastructure: ()=> `/api/v${API_MAJOR_VERSION.toString()}`,
-        batch: (namespace, watch = false)=> `/apis/batch/v${API_MAJOR_VERSION.toString()}/${ watch ? "watch/": "" }namespaces/${namespace}`
-    };
+    REQUEST = Symbol('Request');
 
-const
-    serializeSelectorQuery = (query)=> _.map(query, (v, k)=>[k, v].join('=')).join(','),
-    requestFactory = function(baseConfig){
-        return function({
-            method = "GET",
-            path = "/",
-            qs = {},
-            headers = {},
-            api_namespace = "base",
-            namespace = "default",
-            watch = false
-        }){
-            return https.request(_.merge(baseConfig, {
-                headers,
-                method,
-                path: [`${API_NAMESPACE[api_namespace](namespace, watch)}/${_(path).split('/').compact().join('/')}`, querystring.stringify(qs)].join('?')
-            }));
-        };
-    };
-
-const endRequestBufferResponse = (request, content)=> {
-    request.end(content);
-    return kefir
-        .fromEvents(request, 'response')
-        .merge(kefir.fromEvents(request, 'error').flatMap(kefir.constantError))
-        .take(1)
-        .takeUntilBy(kefir.fromEvents(request, 'end').take(1))
-        .flatMap((res)=>{
-            return kefir
-                .fromCallback((cb)=> res.pipe(concatStream({ encoding: "string" }, cb)))
-                .flatMap(~~(res.statusCode / 100) === 2 ? kefir.constant : kefir.constantError);
-        })
-        .takeErrors(1);
+const apiNamespaces = {
+    base: (namespace)=> `/api/v${API_MAJOR_VERSION.toString()}/namespaces/${namespace}`,
+    infrastructure: ()=> `/api/v${API_MAJOR_VERSION.toString()}`,
+    batch: (namespace, watch = false)=> `/apis/batch/v${API_MAJOR_VERSION.toString()}/${ watch ? "watch/": "" }namespaces/${namespace}`
 };
 
-const clusterConfigurationResolvers = {
-    "cluster.certificate-authority-data": (data)=> Buffer.from(data, 'base64'),
-    "cluster.certificate-authority": fs.readFileSync
-};
-
-module.exports = class Kubemote extends EventEmitter {
-
-    constructor({ type = "manual", config = {} } = {}){
-        super();
-        this[REQUEST] = requestFactory(Kubemote[[type, "ConfigResolver"].join('')](config));
-    }
-
-    static manualConfigResolver({ host, port, certificate_authority, client_key, client_certificate }){
+const configurationResolvers = {
+    manual: function({ host, port, certificate_authority, client_key, client_certificate }){
         return {
             host,
             port,
@@ -76,18 +31,16 @@ module.exports = class Kubemote extends EventEmitter {
             cert: client_certificate,
             key: client_key
         };
-    }
-
-    static homeDirConfigResolver({ file = path.resolve(os.homedir(), '.kube', 'config'), context: contextName } = {}){
-
+    },
+    home_dir: function({ file = path.resolve(os.homedir(), '.kube', 'config'), context: contextName } = {}){
         const CONFIGURATION_READERS = [
             { keys: ["cluster.certificate-authority-data"],  format: _.flow(([str])=> Buffer.from(str, 'base64'), (buffer)=> ({ ca: buffer })) },
-            { keys: ["cluster.certificate-authority"], format: _.flow(([filename])=>fs.readFileSync(filename), (buffer)=> ({ ca: buffer })) },
+            { keys: ["cluster.certificate-authority"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ ca: buffer })) },
             { keys: ["user.client-certificate"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ cert: buffer })) },
             { keys: ["user.client-key"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ key: buffer })) },
             { keys: ["cluster.server"], format: _.flow(_.first, url.parse, ({ host, port, protocol })=> ({ protocol, host: _.first(host.match(/[^:]+/)), port: (port || (protocol === "https:" ? 443 : 80)) })) },
-            { keys: ["user.username", "user.password"], format: _.flow(([username, password])=> [username, password].join(':'), (str)=> Buffer.from(str, 'utf8').toString('base64'), (authentication)=>({ headers: { "Authorization": ["Basic", authentication].join(' ') } })) },
-            { keys: ["cluster.insecure-skip-tls-verify"], format: ([value])=>({ rejectUnauthorized: !value }) }
+            { keys: ["user.username", "user.password"], format: _.flow(([username, password])=> [username, password].join(':'), (str)=> Buffer.from(str, 'utf8').toString('base64'), (authentication)=> ({ headers: { "Authorization": ["Basic", authentication].join(' ') } })) },
+            { keys: ["cluster.insecure-skip-tls-verify"], format: ([value])=> ({ rejectUnauthorized: !value }) }
         ];
 
         let
@@ -106,6 +59,48 @@ module.exports = class Kubemote extends EventEmitter {
                 .value();
 
         return CONFIGURATION_READERS.reduce((ac, { keys, format })=> _.assign(ac, keys.every((keyName)=> _.has(config, keyName)) && format(_.at(config, keys))), {});
+    }
+};
+
+const
+    serializeSelectorQuery = (query)=> _.map(query, (v, k)=>[k, v].join('=')).join(','),
+    requestFactory = function(baseConfig){
+        return function({
+            method = "GET",
+            path = "/",
+            qs = {},
+            headers = {},
+            api_namespace = "base",
+            namespace = "default",
+            watch = false
+        }){
+            return https.request(_.merge(baseConfig, {
+                headers,
+                method,
+                path: [`${apiNamespaces[api_namespace](namespace, watch)}/${_(path).split('/').compact().join('/')}`, querystring.stringify(qs)].join('?')
+            }));
+        };
+    },
+    endRequestBufferResponse = (request, content)=> {
+        request.end(content);
+        return kefir
+            .fromEvents(request, 'response')
+            .merge(kefir.fromEvents(request, 'error').flatMap(kefir.constantError))
+            .take(1)
+            .takeUntilBy(kefir.fromEvents(request, 'end').take(1))
+            .flatMap((res)=>{
+                return kefir
+                    .fromCallback((cb)=> res.pipe(concatStream({ encoding: "string" }, cb)))
+                    .flatMap(~~(res.statusCode / 100) === 2 ? kefir.constant : kefir.constantError);
+            })
+            .takeErrors(1);
+    };
+
+module.exports = class Kubemote extends EventEmitter {
+
+    constructor({ type = "home_dir", config = {} } = {}){
+        super();
+        this[REQUEST] = requestFactory(configurationResolvers[_.snakeCase(type)](config));
     }
 
     getServices(selector){

@@ -21,7 +21,7 @@ let remote = new Kubemote([configuration]);
 let remote = new Kubemote({ type: "homeDir" });
 ```
 
-"homeDir" configuration can contain a `context` field. When it's omitted, the default context will be used.
+"home_dir" configuration can contain a `context` field. When it's omitted, the default context will be used.
 
 "manual" configuration must include the fields `remote`, `host`, `port`, `certificate_authority`, `client_key`, and `client_certificate` i.e.:
 

@@ -5,7 +5,7 @@ const
     kefir = require('kefir'),
     uuid = require('uuid');
 
-let remote = new Kubemote({ type: "homeDir" });
+let remote = new Kubemote({ type: "home_dir" });
 
 let probeStream = kefir
     .fromPromise(remote.getNodes())
