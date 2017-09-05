@@ -16,6 +16,8 @@ const
     API_MAJOR_VERSION = 1,
     REQUEST = Symbol('Request');
 
+const assert = (val, message)=> val || (()=>{ throw(new Error(message)); })();
+
 const bufferToString = (buffer)=> buffer.toString('utf8');
 
 const apiNamespaces = {
@@ -27,50 +29,6 @@ const apiNamespaces = {
 const contentTypes = {
     "application/json": _.flow(bufferToString, JSON.parse),
     "text/plain": bufferToString
-};
-
-const configurationResolvers = {
-    manual: function({ host, port, certificate_authority, client_key, client_certificate }){
-        return {
-            host,
-            port,
-            ca: certificate_authority,
-            cert: client_certificate,
-            key: client_key
-        };
-    },
-    home_dir: function({
-       file = [ ...(process.env["KUBECONFIG"] || "").split(path.delimiter).map(_.trim), path.resolve(os.homedir(), '.kube', 'config') ].filter(Boolean).find(fs.existsSync),
-       context: contextName
-    } = {}){
-
-        const CONFIGURATION_READERS = [
-            { keys: ["cluster.certificate-authority-data"],  format: _.flow(([str])=> Buffer.from(str, 'base64'), (buffer)=> ({ ca: buffer })) },
-            { keys: ["cluster.certificate-authority"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ ca: buffer })) },
-            { keys: ["user.client-certificate"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ cert: buffer })) },
-            { keys: ["user.client-key"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ key: buffer })) },
-            { keys: ["cluster.server"], format: _.flow(_.first, url.parse, ({ host, port, protocol })=> ({ protocol, host: _.first(host.match(/[^:]+/)), port: (port || (protocol === "https:" ? 443 : 80)) })) },
-            { keys: ["user.username", "user.password"], format: _.flow(([username, password])=> [username, password].join(':'), (str)=> Buffer.from(str, 'utf8').toString('base64'), (authentication)=> ({ headers: { "Authorization": ["Basic", authentication].join(' ') } })) },
-            { keys: ["cluster.insecure-skip-tls-verify"], format: ([value])=> ({ rejectUnauthorized: !value }) }
-        ];
-
-        let
-            { users, clusters, contexts, ["current-context"]: defaultContext } = yaml.safeLoad(fs.readFileSync(file, 'utf8')),
-            config = _(contexts)
-                .chain()
-                .groupBy('name')
-                .mapValues((values)=>{
-                    let { cluster: clusterName, user: userName } = _.get(values, '0.context');
-                    return {
-                        user: _.get(_.find(users, ({ name }) => userName === name), 'user'),
-                        cluster: _.get(_.find(clusters, ({ name }) => clusterName === name), 'cluster')
-                    };
-                })
-                .get(contextName || defaultContext)
-                .value();
-
-        return CONFIGURATION_READERS.reduce((ac, { keys, format })=> _.assign(ac, keys.every((keyName)=> _.has(config, keyName)) && format(_.at(config, keys))), {});
-    }
 };
 
 const
@@ -110,9 +68,54 @@ const
 
 module.exports = class Kubemote extends EventEmitter {
 
-    constructor({ type = "home_dir", config = {} } = {}){
+    constructor(config = Kubemote.CONFIGURATION_FILE()){
         super();
-        this[REQUEST] = requestFactory(configurationResolvers[_.snakeCase(type)](config));
+        (({ protocol, host, port })=> assert([protocol, host, port].every(_.negate(_.isUndefined)), 'Missing basic configuration (protocol, host, port)'))(config);
+        this[REQUEST] = requestFactory(config);
+    }
+
+    static MANUAL_CONFIGURATION({ host, port, certificate_authority, client_key, client_certificate }){
+        return {
+            host,
+            port,
+            ca: certificate_authority,
+            cert: client_certificate,
+            key: client_key
+        };
+    }
+
+    static CONFIGURATION_FILE({
+       file = [ ...(process.env["KUBECONFIG"] || "").split(path.delimiter).map(_.trim), path.resolve(os.homedir(), '.kube', 'config') ].filter(Boolean).find(fs.existsSync),
+       context: contextName
+    } = {}){
+
+        const CONFIGURATION_READERS = [
+            { keys: ["cluster.certificate-authority-data"],  format: _.flow(([str])=> Buffer.from(str, 'base64'), (buffer)=> ({ ca: buffer })) },
+            { keys: ["cluster.certificate-authority"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ ca: buffer })) },
+            { keys: ["user.client-certificate"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ cert: buffer })) },
+            { keys: ["user.client-key"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ key: buffer })) },
+            { keys: ["cluster.server"], format: _.flow(_.first, url.parse, ({ host, port, protocol })=> ({ protocol, host: _.first(host.match(/[^:]+/)), port: (port || (protocol === "https:" ? 443 : 80)) })) },
+            { keys: ["user.username", "user.password"], format: _.flow(([username, password])=> [username, password].join(':'), (str)=> Buffer.from(str, 'utf8').toString('base64'), (authentication)=> ({ headers: { "Authorization": ["Basic", authentication].join(' ') } })) },
+            { keys: ["cluster.insecure-skip-tls-verify"], format: ([value])=> ({ rejectUnauthorized: !value }) }
+        ];
+
+        let
+            { users, clusters, contexts, ["current-context"]: defaultContext } = yaml.safeLoad(fs.readFileSync(file, 'utf8')),
+            config = _(contexts)
+                .chain()
+                .groupBy('name')
+                .mapValues((values)=>{
+                    let { cluster: clusterName, user: userName } = _.get(values, '0.context');
+                    return {
+                        user: _.get(_.find(users, ({ name }) => userName === name), 'user'),
+                        cluster: _.get(_.find(clusters, ({ name }) => clusterName === name), 'cluster')
+                    };
+                })
+                .get(contextName || defaultContext)
+                .value();
+
+        assert(config, 'No valid configuration file context can be found');
+        return CONFIGURATION_READERS.reduce((ac, { keys, format })=> _.assign(ac, keys.every((keyName)=> _.has(config, keyName)) && format(_.at(config, keys))), {});
     }
 
     getServices(selector){
