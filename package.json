@@ -10,7 +10,6 @@
   "author": "Tal Weinfeld",
   "license": "ISC",
   "dependencies": {
-    "chalk": "^2.0.1",
     "concat-stream": "^1.6.0",
     "js-yaml": "^3.9.0",
     "kefir": "^3.7.3",

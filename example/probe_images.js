@@ -6,7 +6,7 @@ const
     uuid = require('uuid');
 
 let
-    remote = new Kubemote({ type: "home_dir" }),
+    remote = new Kubemote(),
     probeStream = kefir
         .fromPromise(remote.getNodes())
         .map((podList)=> _(podList["items"]).map('metadata.name').uniq().value())

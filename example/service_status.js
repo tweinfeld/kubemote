@@ -6,7 +6,7 @@ const
     Kubemote = require('../src/kubemote');
 
 const
-    remote = new Kubemote({ type: "home_dir" }),
+    remote = new Kubemote(),
     [ highlight, good, bad ] = ["bold", "green", "red"].map((name)=> chalk[name]),
     readableSince = (sinceDate)=>{
         let secondsElapsed = ~~((Date.now() - sinceDate.getTime()) / 1000);
