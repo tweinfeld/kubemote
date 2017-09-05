@@ -39,7 +39,11 @@ const configurationResolvers = {
             key: client_key
         };
     },
-    home_dir: function({ file = path.resolve(os.homedir(), '.kube', 'config'), context: contextName } = {}){
+    home_dir: function({
+       file = [ ...(process.env["KUBECONFIG"] || "").split(path.delimiter).map(_.trim), path.resolve(os.homedir(), '.kube', 'config') ].filter(Boolean).find(fs.existsSync),
+       context: contextName
+    } = {}){
+
         const CONFIGURATION_READERS = [
             { keys: ["cluster.certificate-authority-data"],  format: _.flow(([str])=> Buffer.from(str, 'base64'), (buffer)=> ({ ca: buffer })) },
             { keys: ["cluster.certificate-authority"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ ca: buffer })) },
