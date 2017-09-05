@@ -16,10 +16,17 @@ const
     API_MAJOR_VERSION = 1,
     REQUEST = Symbol('Request');
 
+const bufferToString = (buffer)=> buffer.toString('utf8');
+
 const apiNamespaces = {
     base: (namespace)=> `/api/v${API_MAJOR_VERSION.toString()}/namespaces/${namespace}`,
     infrastructure: ()=> `/api/v${API_MAJOR_VERSION.toString()}`,
     batch: (namespace, watch = false)=> `/apis/batch/v${API_MAJOR_VERSION.toString()}/${ watch ? "watch/": "" }namespaces/${namespace}`
+};
+
+const contentTypes = {
+    "application/json": _.flow(bufferToString, JSON.parse),
+    "text/plain": bufferToString
 };
 
 const configurationResolvers = {
@@ -90,7 +97,8 @@ const
             .takeUntilBy(kefir.fromEvents(request, 'end').take(1))
             .flatMap((res)=>{
                 return kefir
-                    .fromCallback((cb)=> res.pipe(concatStream({ encoding: "string" }, cb)))
+                    .fromCallback((cb)=> res.pipe(concatStream({ encoding: "buffer" }, cb)))
+                    .map(contentTypes[res.headers["content-type"]] || bufferToString)
                     .flatMap(~~(res.statusCode / 100) === 2 ? kefir.constant : kefir.constantError);
             })
             .takeErrors(1);
@@ -105,16 +113,12 @@ module.exports = class Kubemote extends EventEmitter {
 
     getServices(selector){
         let request = this[REQUEST]({ path: "/services", qs: { includeUninitialized: true, watch: false, labelSelector: serializeSelectorQuery(selector) } });
-        return endRequestBufferResponse(request)
-            .map(JSON.parse)
-            .toPromise();
+        return endRequestBufferResponse(request).toPromise();
     }
 
     getPods(selector){
         let request = this[REQUEST]({ path: "/pods", qs: { includeUninitialized: true, watch: false, labelSelector: serializeSelectorQuery(selector) } });
-        return endRequestBufferResponse(request)
-            .map(JSON.parse)
-            .toPromise();
+        return endRequestBufferResponse(request).toPromise();
     }
 
     getPodLogs({ podName }){
@@ -125,9 +129,7 @@ module.exports = class Kubemote extends EventEmitter {
     createJob(jobSpecJson){
         let byteSpec = Buffer.from(JSON.stringify(jobSpecJson), 'utf8');
         let request = this[REQUEST]({ method: "POST", api_namespace: "batch", path: "/jobs", headers: { "Content-Type": "application/json", "Content-Length": byteSpec.length } });
-        return endRequestBufferResponse(request, byteSpec)
-            .map(JSON.parse)
-            .toPromise();
+        return endRequestBufferResponse(request, byteSpec).toPromise();
     }
 
     watchJob({ jobName }){
@@ -148,11 +150,11 @@ module.exports = class Kubemote extends EventEmitter {
 
     deleteJob({ jobName }){
         let request = this[REQUEST]({ method: "DELETE", api_namespace: "batch", path: `/jobs/${jobName}`, headers: { "Accept": "application/json", "Content-Length": 0 }, qs: { gracePeriodSeconds: 0 } });
-        return endRequestBufferResponse(request).map(JSON.parse).toPromise();
+        return endRequestBufferResponse(request).toPromise();
     }
 
     getNodes(){
         let request = this[REQUEST]({ method: "GET", api_namespace: "infrastructure", path: "/nodes" });
-        return endRequestBufferResponse(request).map(JSON.parse).toPromise();
+        return endRequestBufferResponse(request).toPromise();
     }
 };
