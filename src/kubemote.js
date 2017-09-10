@@ -6,6 +6,7 @@ const
     path = require('path'),
     kefir = require('kefir'),
     https = require('https'),
+    http = require('http'),
     concatStream = require('concat-stream'),
     splitStream = require('split'),
     querystring = require('querystring'),
@@ -15,10 +16,6 @@ const
 const
     API_MAJOR_VERSION = 1,
     REQUEST = Symbol('Request');
-
-const assert = (val, message)=> val || (()=>{ throw(new Error(message)); })();
-
-const bufferToString = (buffer)=> buffer.toString('utf8');
 
 const apiNamespaces = {
     base: (namespace)=> `/api/v${API_MAJOR_VERSION.toString()}/namespaces/${namespace}`,
@@ -32,24 +29,9 @@ const contentTypes = {
 };
 
 const
+    assert = (val, message)=> val || (()=>{ throw(new Error(message)); })(),
+    bufferToString = (buffer)=> buffer.toString('utf8'),
     serializeSelectorQuery = (query)=> _.map(query, (v, k)=>[k, v].join('=')).join(','),
-    requestFactory = function(baseConfig){
-        return function({
-            method = "GET",
-            path = "/",
-            qs = {},
-            headers = {},
-            api_namespace = "base",
-            namespace = "default",
-            watch = false
-        }){
-            return https.request(_.merge(baseConfig, {
-                headers,
-                method,
-                path: [`${apiNamespaces[api_namespace](namespace, watch)}/${_(path).split('/').compact().join('/')}`, querystring.stringify(qs)].join('?')
-            }));
-        };
-    },
     endRequestBufferResponse = (request, content)=> {
         request.end(content);
         return kefir
@@ -68,35 +50,62 @@ const
 
 module.exports = class Kubemote extends EventEmitter {
 
-    constructor(config = Kubemote.CONFIGURATION_FILE()){
+    constructor({
+        host,
+        port,
+        protocol = "https",
+        certificate_authority,
+        client_key,
+        client_certificate,
+        username,
+        password,
+        insecure_tls = false,
+        namespace = "default"
+    } = Kubemote.CONFIGURATION_FILE()){
         super();
-        (({ protocol, host, port })=> assert([protocol, host, port].every(_.negate(_.isUndefined)), 'Missing basic configuration (protocol, host, port)'))(config);
-        this[REQUEST] = requestFactory(config);
-    }
 
-    static MANUAL_CONFIGURATION({ host, port, certificate_authority, client_key, client_certificate }){
-        return {
-            host,
-            port,
-            ca: certificate_authority,
-            cert: client_certificate,
-            key: client_key
+        const
+            client = _.get({ http, https }, protocol, https),
+            baseConfig = _.merge(
+                { host, port },
+                username && { headers: { "Authorization": ["basic", Buffer.from([username, assert(password, 'Password cannot be empty')].join(':'), 'utf8').toString('base64')].join(' ') } },
+                insecure_tls && { rejectUnauthorized: !insecure_tls },
+                certificate_authority && { ca: certificate_authority },
+                client_key && { key: client_key },
+                client_certificate && { cert: client_certificate }
+            );
+
+        this[REQUEST] = function({
+            method = "GET",
+            path = "/",
+            qs = {},
+            headers = {},
+            api_namespace = "base",
+            watch = false
+        }){
+            return client.request(_.merge(baseConfig, {
+                    headers,
+                    method,
+                    path: [`${apiNamespaces[api_namespace](namespace, watch)}/${_(path).split('/').compact().join('/')}`, querystring.stringify(qs)].join('?')
+                })
+            );
         };
     }
 
     static CONFIGURATION_FILE({
-       file = [ ...(process.env["KUBECONFIG"] || "").split(path.delimiter).map(_.trim), path.resolve(os.homedir(), '.kube', 'config') ].filter(Boolean).find(fs.existsSync),
-       context: contextName
+        file = [ ...(process.env["KUBECONFIG"] || "").split(path.delimiter).map(_.trim), path.resolve(os.homedir(), '.kube', 'config') ].filter(Boolean).find(fs.existsSync),
+        context: contextName,
+        namespace
     } = {}){
 
         const CONFIGURATION_READERS = [
-            { keys: ["cluster.certificate-authority-data"],  format: _.flow(([str])=> Buffer.from(str, 'base64'), (buffer)=> ({ ca: buffer })) },
-            { keys: ["cluster.certificate-authority"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ ca: buffer })) },
-            { keys: ["user.client-certificate"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ cert: buffer })) },
-            { keys: ["user.client-key"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ key: buffer })) },
-            { keys: ["cluster.server"], format: _.flow(_.first, url.parse, ({ host, port, protocol })=> ({ protocol, host: _.first(host.match(/[^:]+/)), port: (port || (protocol === "https:" ? 443 : 80)) })) },
-            { keys: ["user.username", "user.password"], format: _.flow(([username, password])=> [username, password].join(':'), (str)=> Buffer.from(str, 'utf8').toString('base64'), (authentication)=> ({ headers: { "Authorization": ["Basic", authentication].join(' ') } })) },
-            { keys: ["cluster.insecure-skip-tls-verify"], format: ([value])=> ({ rejectUnauthorized: !value }) }
+            { keys: ["cluster.certificate-authority-data"],  format: _.flow(([str])=> Buffer.from(str, 'base64'), (buffer)=> ({ certificate_authority: buffer })) },
+            { keys: ["cluster.certificate-authority"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ certificate_authority: buffer })) },
+            { keys: ["user.client-certificate"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ client_certificate: buffer })) },
+            { keys: ["user.client-key"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ client_key: buffer })) },
+            { keys: ["cluster.server"], format: _.flow(_.first, url.parse, ({ host, port, protocol })=> ({ protocol: _.first(protocol.match(/^https?/)), host: _.first(host.match(/[^:]+/)), port: (port || (protocol === "https:" ? 443 : 80)) })) },
+            { keys: ["user.username", "user.password"], format: ([username, password])=>({ username, password }) },
+            { keys: ["cluster.insecure-skip-tls-verify"], format: ([value])=> ({ insecure_tls: value }) }
         ];
 
         let
@@ -114,7 +123,7 @@ module.exports = class Kubemote extends EventEmitter {
                 .get(contextName || defaultContext)
                 .value();
 
-        assert(config, 'No valid configuration file context can be found');
+        assert(config, 'Configuration file context not found!');
         return CONFIGURATION_READERS.reduce((ac, { keys, format })=> _.assign(ac, keys.every((keyName)=> _.has(config, keyName)) && format(_.at(config, keys))), {});
     }
 
@@ -148,7 +157,7 @@ module.exports = class Kubemote extends EventEmitter {
             .fromEvents(request, 'response')
             .flatMap((response)=> kefir.fromEvents(response.pipe(splitStream(null, null, { trailing: false })), 'data'))
             .map(JSON.parse)
-            .takeUntilBy(kefir.fromEvents(request, 'socket').take(1).flatMap((socket)=> { destroy = _.once(()=> { socket.destroy(); }); return kefir.merge(["close", "error"].map((eventName)=> kefir.fromEvents(socket, eventName))).take(1); }))
+            .takeUntilBy(kefir.fromEvents(request, 'socket').take(1).flatMap((socket)=> { destroy = _.once(()=> { socket.destroy(); }); return kefir.merge(["close", "error"].map((eventName)=> kefir.fromEvents(socket, eventName))).take(1); }));
 
         request.end();
         updateStream.onValue((payload)=> this.emit('watch', payload));
