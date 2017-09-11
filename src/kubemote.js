@@ -13,20 +13,7 @@ const
     yaml = require('js-yaml'),
     EventEmitter = require('events').EventEmitter;
 
-const
-    API_MAJOR_VERSION = 1,
-    REQUEST = Symbol('Request');
-
-const apiNamespaces = {
-    base: (namespace)=> `/api/v${API_MAJOR_VERSION.toString()}/namespaces/${namespace}`,
-    infrastructure: ()=> `/api/v${API_MAJOR_VERSION.toString()}`,
-    batch: (namespace, watch = false)=> `/apis/batch/v${API_MAJOR_VERSION.toString()}/${ watch ? "watch/": "" }namespaces/${namespace}`
-};
-
-const contentTypes = {
-    "application/json": _.flow(bufferToString, JSON.parse),
-    "text/plain": bufferToString
-};
+const REQUEST = Symbol('Request');
 
 const
     assert = (val, message)=> val || (()=>{ throw(new Error(message)); })(),
@@ -48,6 +35,11 @@ const
             .takeErrors(1);
     };
 
+const contentTypes = {
+    "application/json": _.flow(bufferToString, JSON.parse),
+    "text/plain": bufferToString
+};
+
 module.exports = class Kubemote extends EventEmitter {
 
     constructor({
@@ -62,6 +54,7 @@ module.exports = class Kubemote extends EventEmitter {
         insecure_tls = false,
         namespace = "default"
     } = Kubemote.CONFIGURATION_FILE()){
+
         super();
 
         const
@@ -77,18 +70,15 @@ module.exports = class Kubemote extends EventEmitter {
 
         this[REQUEST] = function({
             method = "GET",
-            path = "/",
+            path,
             qs = {},
-            headers = {},
-            api_namespace = "base",
-            watch = false
+            headers = {}
         }){
             return client.request(_.merge(baseConfig, {
-                    headers,
-                    method,
-                    path: [`${apiNamespaces[api_namespace](namespace, watch)}/${_(path).split('/').compact().join('/')}`, querystring.stringify(qs)].join('?')
-                })
-            );
+                headers,
+                method,
+                path: _.compact([_.template(path)({ namespace }), querystring.stringify(qs)]).join('?') //"http://127.0.0.1:8001" +
+            }));
         };
     }
 
@@ -124,34 +114,51 @@ module.exports = class Kubemote extends EventEmitter {
                 .value();
 
         assert(config, 'Configuration file context not found!');
-        return CONFIGURATION_READERS.reduce((ac, { keys, format })=> _.assign(ac, keys.every((keyName)=> _.has(config, keyName)) && format(_.at(config, keys))), {});
+        return CONFIGURATION_READERS.reduce((ac, { keys, format })=> _.assign(ac, keys.every((keyName)=> _.has(config, keyName)) && format(_.at(config, keys))), { namespace });
     }
 
     getServices(selector){
-        let request = this[REQUEST]({ path: "/services", qs: { includeUninitialized: true, watch: false, labelSelector: serializeSelectorQuery(selector) } });
+        const request = this[REQUEST]({
+            path: "/api/v1/namespaces/${namespace}/services",
+            qs: { includeUninitialized: true, watch: false, labelSelector: serializeSelectorQuery(selector) }
+        });
         return endRequestBufferResponse(request).toPromise();
     }
 
     getPods(selector){
-        let request = this[REQUEST]({ path: "/pods", qs: { includeUninitialized: true, watch: false, labelSelector: serializeSelectorQuery(selector) } });
+        const request = this[REQUEST]({
+            path: "/api/v1/namespaces/${namespace}/pods",
+            qs: { includeUninitialized: true, watch: false, labelSelector: serializeSelectorQuery(selector) }
+        });
+
         return endRequestBufferResponse(request).toPromise();
     }
 
     getPodLogs({ podName }){
-        let request = this[REQUEST]({ path: `/pods/${podName}/log` });
+        const request = this[REQUEST]({
+            path: `/api/v1/namespaces/$\{namespace\}/pods/${podName}/log`
+        });
+
         return endRequestBufferResponse(request).toPromise();
     }
 
     createJob(jobSpecJson){
         let byteSpec = Buffer.from(JSON.stringify(jobSpecJson), 'utf8');
-        let request = this[REQUEST]({ method: "POST", api_namespace: "batch", path: "/jobs", headers: { "Content-Type": "application/json", "Content-Length": byteSpec.length } });
+        const request = this[REQUEST]({
+            method: "POST",
+            path: "/apis/batch/v1/namespaces/${namespace}/jobs",
+            headers: { "Content-Type": "application/json", "Content-Length": byteSpec.length }
+        });
+
         return endRequestBufferResponse(request, byteSpec).toPromise();
     }
 
     watchJob({ jobName }){
-        let
-            request = this[REQUEST]({ method: "GET", watch: true, api_namespace: "batch", path: `/jobs/${jobName}` }),
-            destroy = _.noop;
+        let destroy = _.noop;
+        const request = this[REQUEST]({
+            method: "GET",
+            path: `/apis/batch/v1/watch/namespaces/$\{namespace\}/jobs/${jobName}`
+        });
 
         let updateStream = kefir
             .fromEvents(request, 'response')
@@ -160,17 +167,28 @@ module.exports = class Kubemote extends EventEmitter {
             .takeUntilBy(kefir.fromEvents(request, 'socket').take(1).flatMap((socket)=> { destroy = _.once(()=> { socket.destroy(); }); return kefir.merge(["close", "error"].map((eventName)=> kefir.fromEvents(socket, eventName))).take(1); }));
 
         request.end();
+
         updateStream.onValue((payload)=> this.emit('watch', payload));
-        return Promise.resolve(()=>{ destroy(); });
+        return Promise.resolve(destroy);
     }
 
     deleteJob({ jobName }){
-        let request = this[REQUEST]({ method: "DELETE", api_namespace: "batch", path: `/jobs/${jobName}`, headers: { "Accept": "application/json", "Content-Length": 0 }, qs: { gracePeriodSeconds: 0 } });
+        const request = this[REQUEST]({
+            method: "DELETE",
+            path: `/apis/batch/v1/namespaces/$\{namespace\}/jobs/${jobName}`,
+            headers: { "Accept": "application/json", "Content-Length": 0 },
+            qs: { gracePeriodSeconds: 0 }
+        });
+
         return endRequestBufferResponse(request).toPromise();
     }
 
     getNodes(){
-        let request = this[REQUEST]({ method: "GET", api_namespace: "infrastructure", path: "/nodes" });
+        let request = this[REQUEST]({
+            method: "GET",
+            path: "/api/v1/nodes"
+        });
+
         return endRequestBufferResponse(request).toPromise();
     }
 };
