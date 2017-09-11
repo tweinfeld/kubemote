@@ -134,12 +134,56 @@ module.exports = class Kubemote extends EventEmitter {
         return endRequestBufferResponse(request).toPromise();
     }
 
+    getDeployments(selector){
+        const request = this[REQUEST]({
+            path: "/apis/apps/v1beta1/namespaces/$\{namespace\}/deployments",
+            qs: { includeUninitialized: true, watch: false, labelSelector: serializeSelectorQuery(selector) }
+        });
+
+        return endRequestBufferResponse(request).toPromise();
+    }
+
+    patchDeployment({ name, spec }){
+        let
+            deploymentName = name || _.get(spec, 'metadata.name'),
+            byteSpec = Buffer.from(JSON.stringify(spec), 'utf8');
+
+        const request = this[REQUEST]({
+            method: "PATCH",
+            path: `/apis/apps/v1beta1/namespaces/$\{namespace\}/deployments/${deploymentName}`,
+            headers: { "Content-Type": "application/strategic-merge-patch+json", "Content-Length": byteSpec.length }
+        });
+
+        return endRequestBufferResponse(request, byteSpec).toPromise();
+    }
+
+    deleteDeployment({ name }){
+        const request = this[REQUEST]({
+            method: "DELETE",
+            path: `/apis/apps/v1beta1/namespaces/$\{namespace\}/deployments/${name}`,
+            headers: { "Accept": "application/json", "Content-Length": 0 }
+        });
+
+        return endRequestBufferResponse(request).toPromise();
+    }
+
     getPodLogs({ podName }){
         const request = this[REQUEST]({
             path: `/api/v1/namespaces/$\{namespace\}/pods/${podName}/log`
         });
 
         return endRequestBufferResponse(request).toPromise();
+    }
+
+    createDeployment(deploymentSpecJson){
+        let byteSpec = Buffer.from(JSON.stringify(deploymentSpecJson), 'utf8');
+        const request = this[REQUEST]({
+            method: "POST",
+            path: "/apis/apps/v1beta1/namespaces/${namespace}/deployments",
+            headers: { "Content-Type": "application/json", "Content-Length": byteSpec.length }
+        });
+
+        return endRequestBufferResponse(request, byteSpec).toPromise();
     }
 
     createJob(jobSpecJson){
