@@ -34,4 +34,61 @@ Will connect according to the manual configuration specified.
 
 The full list of configuration options are:
 
-`host` `port` `protocol` `certificate_authority` `client_key` `client_certificate` `username` `password` `insecure_tls` `namespace`  
+`host` `port` `protocol` `certificate_authority` `client_key` `client_certificate` `username` `password` `insecure_tls` `namespace`
+
+# Methods
+
+## Cluster
+### getNodes
+Returns a list of the cluster's nodes
+## Discovery
+### getServices
+ * **Selector** - The label selector
+ 
+Returns a list of services
+## Workloads
+### getPods
+* **Selector** - The label selector
+
+Returns a list of pods
+### getPodLogs
+* **podName** - The name of the pod to retrieve logs for
+
+Returns the logs for a pod
+
+### getDeployments
+* **Selector** - The label selector
+
+Returns a list of deployments
+
+### patchDeployment
+* **options** - `name` and `spec`
+
+Updates a deployment
+
+### deleteDeployment
+
+Deletes a deployment
+
+### createDeployment
+
+Creates a new deployment
+
+### createJob
+
+* **jobSpecJson** - The job spec
+
+Creates a new job
+
+### watchJob
+
+* **options** - `jobname`
+
+Watches a job
+
+### deleteJob
+
+* **options** - `jobname`
+
+Deletes a job
+
