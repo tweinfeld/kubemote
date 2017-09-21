@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "concat-stream": "^1.6.0",
+    "js-yaml": "^3.10.0",
+    "kefir": "^3.7.4",
+    "lodash": "^4.17.4",
+    "split": "^1.0.1"
+  }
+}
