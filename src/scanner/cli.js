@@ -3,8 +3,12 @@ const _ = require('lodash')
 const Table = require('cli-table');
 const util  = require('util');
 const assert = require('assert');
+const moment = require('moment');
+const milisecInHour = 1000*60*60;
 
- Scanner.scanDeployment({wide:true}).then((v)=>{
+
+
+ Scanner.scanDeployment({/*deploymentName : "test",*/  wide:true}).then((v)=>{
   console.log(`the deployment is ${util.format(v)}`);
 
   const headers = ["name", "desired", "current",
@@ -14,8 +18,12 @@ const assert = require('assert');
   //, colWidths: [100, 200]
 });
 
+//lastUpdateTime: '2017-09-17T05:09:28Z',
+       //lastTransitionTime: '2017-09-17T05:09:28Z',
+
+
 assert(table);
- 
+
   _.forEach(v, (d)=>{
      let status = _.get(d, "deploy.status")
      console.log(`status  = ${util.format(status)}`);
@@ -27,11 +35,16 @@ assert(table);
      let desired = _.get(status, "replicas");
      let current = _.get(status , "updatedReplicas");
      let available = parseInt(desired)- parseInt(_.get(status , "unavailableReplicas"))
+     let upToDate = "----";
      let containers = util.format(_.get(d, "containers[0].image"));
      let selector  =  util.format(_.get(meta, "labels"));
+     let creationTime = _.get(meta, "creationTimestamp");
+     let diff =  moment.utc().diff(moment.utc(creationTime));
+
+     let age = `${Math.floor(diff/milisecInHour)}h`;
 
     table.push(
-        [name , desired, current, available, containers, selector]);
+        [name , desired, current,upToDate, available, age ,containers, selector]);
   })
   console.log(table.toString());
 })
