@@ -90,7 +90,7 @@ class Scanner
       }, []).log('services=>')
   }
 }
-Scanner.scanDeployment({wide:true}).then((v)=>{
+/*Scanner.scanDeployment({wide:true}).then((v)=>{
   console.log('v:' + v );
   kefir.sequentially(0, v).map((d)=>{
      console.log(`the spec is ${util.format(d.deploy.spec)}`);
@@ -99,7 +99,7 @@ Scanner.scanDeployment({wide:true}).then((v)=>{
      return d;
   }).log('->');
 
-})
+})*/
 
 module.exports = Scanner;
 /*
