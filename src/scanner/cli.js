@@ -5,11 +5,11 @@ const
     Kubemote = require('../kubemote');
 
 const argumentParsers = [
-    (str)=> ((match)=> (match && { includeContainers: _.get(match, '3') !== "0" }) || {})(str.match(/(-c|--containers?)(=([01]))?/)),
-    (str)=> ((match)=> (match && { deploymentName: _.get(match, '0', '') }) || {})(str.match(/^\w+$/))
+    (str)=> ((match)=> match && { includeContainers: _.get(match, '3') !== "0" })(str.match(/^(-c|--containers?)(=([01]))?$/)),
+    (str)=> ((match)=> match && { deploymentName: _.get(match, '0', '') })(str.match(/^\w+$/))
 ];
 
-const HOUR_IN_MILLISECONDS = 3600000;
+const MILLISECONDS_IN_HOUR = 3600000;
 const generateDeploymentsConsoleReport = function({ deploymentName = "", includeContainers = false }){
     let client = new Kubemote();
     return kefir
@@ -54,7 +54,7 @@ const generateDeploymentsConsoleReport = function({ deploymentName = "", include
                     replicas,
                     updatedReplicas,
                     replicas - unavailableReplicas,
-                    [~~((Date.now() - creationTimestamp) / (HOUR_IN_MILLISECONDS)), "h"].join(''),
+                    [~~((Date.now() - creationTimestamp) / (MILLISECONDS_IN_HOUR)), "h"].join(''),
                     ...(includeContainers ? [containers.map(({ image })=> _.truncate(image, { length: 50 })).join(' ')] : []),
                     _.truncate(_.map(labels, (v,k)=> `${k}=${v}`).join(' '), { length: 50 })
                 ]);
@@ -70,7 +70,7 @@ generateDeploymentsConsoleReport(
     process
         .argv
         .slice(2)
-        .reduce((ac, arg)=>({ ...ac, ...argumentParsers.map((parser)=> parser(arg)).reduce(_.merge) }), {})
+        .reduce((ac, arg)=>({ ...ac, ...argumentParsers.map((parser)=> parser(arg) || {}).reduce(_.merge) }), {})
     )
     .then(console.info)
     .catch(console.error);
