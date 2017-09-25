@@ -13,7 +13,9 @@ const
     yaml = require('js-yaml'),
     EventEmitter = require('events').EventEmitter;
 
-const REQUEST = Symbol('Request');
+const
+    REQUEST = Symbol('Request'),
+    RECONNECT_DELAY = 1 * 6000;
 
 const
     assert = (val, message)=> val || (()=>{ throw(new Error(message)); })(),
@@ -27,6 +29,7 @@ const
             return kefir.concat([
                 kefir
                     .fromEvents(request, 'response')
+                    .merge(kefir.fromEvents(request, 'error').flatMap(kefir.constantError))
                     .flatMap((response)=> kefir.fromEvents(response.pipe(splitStream(null, null, { trailing: false })), 'data'))
                     .map(JSON.parse)
                     .takeUntilBy(
@@ -37,12 +40,13 @@ const
                                 currentSocket = socket;
                                 return kefir.merge(["close", "error"].map((eventName)=> kefir.fromEvents(socket, eventName))).take(1);
                             })
-                    ),
-                kefir.later(1000).ignoreValues()
+                    )
+                    .takeErrors(1),
+                kefir.later(RECONNECT_DELAY).ignoreValues()
             ]);
         }).takeUntilBy(kefir.fromCallback((cb)=> destroy = cb));
 
-        updateStream.spy().onValue((payload)=> this.emit('watch', payload));
+        updateStream.onValue((payload)=> this.emit('watch', payload));
         return ()=>{ destroy(); currentSocket && currentSocket.destroy(); }
     },
     endRequestBufferResponse = (request, content)=> {
@@ -232,44 +236,35 @@ module.exports = class Kubemote extends EventEmitter {
     }
 
     watchPodList(selector){
-        const request = this[REQUEST]({
+        return Promise.resolve(createRequestSendWatchEvents.call(this, {
             method: "GET",
-            path: "/api/v1/watch/namespaces/$\{namespace\}/pods",
+            path: "/api/v1/watch/namespaces/${namespace}/pods",
             qs: { includeUninitialized: true, watch: true, labelSelector: serializeSelectorQuery(selector) }
-        });
-
-        return Promise.resolve(endRequestSendWatchEvents.call(this, request));
+        }));
     }
 
     watchServiceList(selector){
-
-        const request = this[REQUEST]({
+        return Promise.resolve(createRequestSendWatchEvents.call(this, {
             method: "GET",
-            path: `/api/v1/watch/namespaces/$\{namespace\}/services`,
+            path: "/api/v1/watch/namespaces/${namespace}/services",
             qs: { includeUninitialized: true, watch: true, labelSelector: serializeSelectorQuery(selector) }
-        });
-
-        return Promise.resolve(endRequestSendWatchEvents.call(this, request));
+        }));
     }
 
     watchJobList(selector){
-        const request = this[REQUEST]({
+        return Promise.resolve(createRequestSendWatchEvents.call(this, {
             method: "GET",
-            path: `/apis/batch/v1/watch/namespaces/$\{namespace\}/jobs`,
+            path: "/apis/batch/v1/watch/namespaces/${namespace}/jobs",
             qs: { includeUninitialized: true, watch: true, labelSelector: serializeSelectorQuery(selector) }
-        });
-
-        return Promise.resolve(endRequestSendWatchEvents.call(this, request));
+        }));
     }
 
     watchJob({ jobName }){
-        let destroy = _.noop;
-        const request = this[REQUEST]({
+        return Promise.resolve(createRequestSendWatchEvents.call(this, {
             method: "GET",
-            path: `/apis/batch/v1/watch/namespaces/$\{namespace\}/jobs/${jobName}`
-        });
-
-        return Promise.resolve(endRequestSendWatchEvents.call(this, request));
+            path: `/apis/batch/v1/watch/namespaces/$\\{namespace\\}/jobs/${jobName}`,
+            qs: { includeUninitialized: true, watch: true, labelSelector: serializeSelectorQuery(selector) }
+        }));
     }
 
     deleteJob({ jobName }){
