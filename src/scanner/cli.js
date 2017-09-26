@@ -6,14 +6,14 @@ const
 
 const argumentParsers = [
     (str)=> ((match)=> match && { includeContainers: _.get(match, '3') !== "0" })(str.match(/^(-c|--containers?)(=([01]))?$/)),
-    (str)=> ((match)=> match && { deploymentName: _.get(match, '0', '') })(str.match(/^\w+$/))
+    //(str)=> ((match)=> match && { deploymentName: _.get(match, '0', '') })(str.match(/^\w+$/))
 ];
 
 const MILLISECONDS_IN_HOUR = 3600000;
 const generateDeploymentsConsoleReport = function({ deploymentName = "", includeContainers = false }){
     let client = new Kubemote();
     return kefir
-        .fromPromise(client.getDeployments({ name: deploymentName }))
+        .fromPromise(client.getDeployments())
         .flatMap((res)=> {
             return kefir.combine(
                 (res["kind"] === "Deployment" ? [res] : res["items"]).map((deploymentDoc)=>{
