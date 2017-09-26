@@ -70,7 +70,7 @@ generateDeploymentsConsoleReport(
     process
         .argv
         .slice(2)
-        .reduce((ac, arg)=>({ ...ac, ...argumentParsers.map((parser)=> parser(arg) || {}).reduce(_.merge) }), {})
+        .reduce((ac, arg)=> _.assign(ac, argumentParsers.map((parser)=> parser(arg) || {}).reduce(_.merge)), {})
     )
     .then(console.info)
     .catch(console.error);
