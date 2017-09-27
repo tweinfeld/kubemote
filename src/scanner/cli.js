@@ -11,9 +11,10 @@ const argumentParsers = [
 
 const MILLISECONDS_IN_HOUR = 3600000;
 const generateDeploymentsConsoleReport = function({ deploymentName = "", includeContainers = false }){
+    console.log(`deployment ${deploymentName}`);
     let client = new Kubemote();
     return kefir
-        .fromPromise(client.getDeployments({ name: deploymentName }))
+        .fromPromise(client.getDeployments({ name: deploymentName })).log()
         .flatMap((res)=> {
             return kefir.combine(
                 (res["kind"] === "Deployment" ? [res] : res["items"]).map((deploymentDoc)=>{
@@ -62,10 +63,11 @@ const generateDeploymentsConsoleReport = function({ deploymentName = "", include
 
             return table.toString();
         })
-        .mapErrors(({ message = "Unspecified" })=> message)
+        .mapErrors(({ message = "Unspecified" })=> message).log()
         .toPromise();
 };
-
+console.log(process
+    .argv);
 generateDeploymentsConsoleReport(
     process
         .argv
