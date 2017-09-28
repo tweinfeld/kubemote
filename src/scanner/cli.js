@@ -10,13 +10,42 @@ const argumentParsers = [
     (str)=> ((match)=> match && { deploymentName: _.get(match, '0', '') })(str.match(/^\w+$/))
 ];
 
-const MILLISECONDS_IN_HOUR = 3600000;
-const HOURS_IN_DAYS  = 24;
-let timeConverter = (date)=>{
-   let hours = ~~(date/MILLISECONDS_IN_HOUR);
-   let days = ~~(hours/HOURS_IN_DAYS);
 
-   return (days) ? [days, 'd'].join('') : [hours, 'h'];
+
+let timeConverter = (date)=>{
+
+  const MIL_IN_SEC = 1000;
+  const MIL_IN_MIN = 60*MIL_IN_SEC;
+  const MIL_IN_HOUR = 60*MIL_IN_MIN;
+  const MIL_IN_DAY =  24 * MIL_IN_HOUR;
+
+   let time = {};
+     let factors = [MIL_IN_DAY, MIL_IN_HOUR, MIL_IN_MIN, MIL_IN_SEC];
+     let letter = ["d", "h", "m", "s"]
+
+     factors.reduce((agg, factor)=>{
+       console.log(`factor:${factor}`);
+        _.set(agg.time, letter[agg.index],~~(agg.rest/factor));
+        agg.rest = agg.rest%factor;
+        agg.index++;
+        return agg;
+      }, {time, index:0, rest:date})
+
+     /*time.d = (~~(date/MIL_IN_DAY));
+     let rest =   date%MIL_IN_DAY;
+     time.h = (~~(current/MIL_IN_HOUR));
+     rest =  current%MIL_IN_HOUR
+     time.m = (~~(current/MIL_IN_MIN));
+     rest = current%MIL_IN_MIN;
+     time.s = (~~(current/MIL_IN_SEC));
+     rest =  current%MIL_IN_SEC;
+     _flow(()=>)*/
+
+     time = _.pickBy(time, _.identity);
+     let ret =  _.map(time, (v, k)=>v + `${k}:`)
+     .slice(0, _.values(time).length).join('');
+
+     return _.trimEnd(ret, ":");
 }
 const generateDeploymentsConsoleReport = function({ deploymentName = "", includeContainers = false }){
 
