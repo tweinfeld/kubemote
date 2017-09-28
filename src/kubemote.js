@@ -163,7 +163,15 @@ module.exports = class Kubemote extends EventEmitter {
 
         return endRequestBufferResponse(request).toPromise();
     }
+    getReplicaSets(selector){
+      // /apis/extensions/v1beta1/namespaces/{namespace}/replicasets/{name}
+      const request = this[REQUEST]({
+          path: "/apis/extensions/v1beta1/namespaces/$\{namespace\}/replicasets/",
+          qs: { includeUninitialized: true, watch: false, labelSelector: serializeSelectorQuery(selector) }
+      });
 
+      return endRequestBufferResponse(request).toPromise();
+    }
     getDeployments(selector){
         const request = this[REQUEST]({
             path: "/apis/apps/v1beta1/namespaces/$\{namespace\}/deployments",
