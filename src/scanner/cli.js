@@ -29,12 +29,10 @@ let timeConverter = (date)=>{
      current =  current%MIL_IN_SEC;
 
      time = _.pickBy(time, _.identity);
+     let ret =  _.map(time, (v, k)=>v + `${k}:`)
+     .slice(0, _.values(time).length).join('');
 
-   console.log("time "+ util.format(time));
-   let ret =  _.map(time, (v, k)=>v + `${k}:`)
-   .slice(0, _.values(time).length).join('');
-
-   return _.trimEnd(ret, ":");
+     return _.trimEnd(ret, ":");
 }
 const generateDeploymentsConsoleReport = function({ deploymentName = "", includeContainers = false }){
 
