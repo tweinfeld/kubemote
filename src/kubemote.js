@@ -13,12 +13,42 @@ const
     yaml = require('js-yaml'),
     EventEmitter = require('events').EventEmitter;
 
-const REQUEST = Symbol('Request');
+const
+    REQUEST = Symbol('Request'),
+    RECONNECT_DELAY = 1 * 6000;
 
 const
     assert = (val, message)=> val || (()=>{ throw(new Error(message)); })(),
     bufferToString = (buffer)=> buffer.toString('utf8'),
     serializeSelectorQuery = (query)=> _.map(query, (v, k)=>[k, v].join('=')).join(','),
+    createRequestSendWatchEvents = function(options, content){
+        let destroy = _.noop, currentSocket;
+        let updateStream = kefir.repeat(()=> {
+            let request = this[REQUEST](options);
+            request.end(content);
+            return kefir.concat([
+                kefir
+                    .fromEvents(request, 'response')
+                    .merge(kefir.fromEvents(request, 'error').flatMap(kefir.constantError))
+                    .flatMap((response)=> kefir.fromEvents(response.pipe(splitStream(null, null, { trailing: false })), 'data'))
+                    .map(JSON.parse)
+                    .takeUntilBy(
+                        kefir
+                            .fromEvents(request, 'socket')
+                            .take(1)
+                            .flatMap((socket)=> {
+                                currentSocket = socket;
+                                return kefir.merge(["close", "error"].map((eventName)=> kefir.fromEvents(socket, eventName))).take(1);
+                            })
+                    )
+                    .takeErrors(1),
+                kefir.later(RECONNECT_DELAY).ignoreValues()
+            ]);
+        }).takeUntilBy(kefir.fromCallback((cb)=> destroy = cb));
+
+        updateStream.onValue((payload)=> this.emit('watch', payload));
+        return ()=>{ destroy(); currentSocket && currentSocket.destroy(); }
+    },
     endRequestBufferResponse = (request, content)=> {
         request.end(content);
         return kefir
@@ -205,23 +235,44 @@ module.exports = class Kubemote extends EventEmitter {
         return endRequestBufferResponse(request, byteSpec).toPromise();
     }
 
-    watchJob({ jobName }){
-        let destroy = _.noop;
-        const request = this[REQUEST]({
+    watchDeploymentList(selector){
+        return Promise.resolve(createRequestSendWatchEvents.call(this, {
             method: "GET",
-            path: `/apis/batch/v1/watch/namespaces/$\{namespace\}/jobs/${jobName}`
-        });
+            path: "/apis/apps/v1beta1/watch/namespaces/$\{namespace\}/deployments",
+            qs: { includeUninitialized: true, watch: true, labelSelector: serializeSelectorQuery(selector) }
+        }));
+    }
 
-        let updateStream = kefir
-            .fromEvents(request, 'response')
-            .flatMap((response)=> kefir.fromEvents(response.pipe(splitStream(null, null, { trailing: false })), 'data'))
-            .map(JSON.parse)
-            .takeUntilBy(kefir.fromEvents(request, 'socket').take(1).flatMap((socket)=> { destroy = _.once(()=> { socket.destroy(); }); return kefir.merge(["close", "error"].map((eventName)=> kefir.fromEvents(socket, eventName))).take(1); }));
+    watchPodList(selector){
+        return Promise.resolve(createRequestSendWatchEvents.call(this, {
+            method: "GET",
+            path: "/api/v1/watch/namespaces/${namespace}/pods",
+            qs: { includeUninitialized: true, watch: true, labelSelector: serializeSelectorQuery(selector) }
+        }));
+    }
 
-        request.end();
+    watchServiceList(selector){
+        return Promise.resolve(createRequestSendWatchEvents.call(this, {
+            method: "GET",
+            path: "/api/v1/watch/namespaces/${namespace}/services",
+            qs: { includeUninitialized: true, watch: true, labelSelector: serializeSelectorQuery(selector) }
+        }));
+    }
 
-        updateStream.onValue((payload)=> this.emit('watch', payload));
-        return Promise.resolve(destroy);
+    watchJobList(selector){
+        return Promise.resolve(createRequestSendWatchEvents.call(this, {
+            method: "GET",
+            path: "/apis/batch/v1/watch/namespaces/${namespace}/jobs",
+            qs: { includeUninitialized: true, watch: true, labelSelector: serializeSelectorQuery(selector) }
+        }));
+    }
+
+    watchJob({ jobName }){
+        return Promise.resolve(createRequestSendWatchEvents.call(this, {
+            method: "GET",
+            path: `/apis/batch/v1/watch/namespaces/$\\{namespace\\}/jobs/${jobName}`,
+            qs: { includeUninitialized: true, watch: true, labelSelector: serializeSelectorQuery(selector) }
+        }));
     }
 
     deleteJob({ jobName }){
