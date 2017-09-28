@@ -1,59 +1,90 @@
-const Scanner = require('./scanner');
-const _ = require('lodash')
-const Table = require('cli-table');
-const util  = require('util');
-const assert = require('assert');
-const moment = require('moment');
-const milisecInHour = 1000*60*60;
+const
+    _ = require('lodash'),
+    kefir = require('kefir'),
+    Table = require('cli-table'),
+    Kubemote = require('../kubemote');
+    const util  = require('util');
 
+const argumentParsers = [
+    (str)=> ((match)=> match && { includeContainers: _.get(match, '3') !== "0" })(str.match(/^(-c|--containers?)(=([01]))?$/)),
+    (str)=> ((match)=> match && { deploymentName: _.get(match, '0', '') })(str.match(/^\w+$/))
+];
 
+const MILLISECONDS_IN_HOUR = 3600000;
+const HOURS_IN_DAYS  = 24;
+let timeConverter = (date)=>{
+   let hours = ~~(date/MILLISECONDS_IN_HOUR);
+   let days = ~~(hours/HOURS_IN_DAYS);
 
- Scanner.scanDeployment({/*deploymentName : "test",*/  wide:true}).then((v)=>{
-  console.log(`the deployment is ${util.format(v)}`);
+   return (days) ? [days, 'd'].join('') : [hours, 'h'];
+}
+const generateDeploymentsConsoleReport = function({ deploymentName = "", includeContainers = false }){
 
-  const headers = ["name", "desired", "current",
-   "up-to-date", "available", "age" , "containers", "images(s)", "selector"];
-  let table = new Table({
-      head: headers
-  //, colWidths: [100, 200]
-});
+    let client = new Kubemote();
+    return kefir
+        .fromPromise(client.getDeployments()).map()
+         .log('deploy->').flatMap((res)=> {
+            //console.log(`name ${_.get(res, 'metadata.name')}`);
+            return kefir.combine(
+                (res["kind"] === "Deployment" ? [res] : res["items"])
+                    .filter((deploymentName &&_.matchesProperty('metadata.name', deploymentName)) || _.constant(true))
+                    .map((deploymentDoc)=>{
+                        return kefir.combine([
+                            kefir.constant({ deploy: deploymentDoc }),
+                            includeContainers ?
+                                kefir
+                                    .fromPromise(client.getPods(_.get(deploymentDoc, 'spec.selector.matchLabels')))
+                                    .map(({ items: podDocs })=>({ containers: _(podDocs).map('status.containerStatuses').flatten().value() })) :
+                                kefir.constant({})
+                        ], _.merge)
+                    })
+            );
+        }).log('->')
+        .map((report)=>{
+            console.log('adding report');
+            let table = new Table({ head: _.compact([ "Name", "Desired", "Current", "Available", "Age", includeContainers && "Images(s)", "Selectors" ]) });
+            report.forEach((item)=>{
+                let [name, replicas, updatedReplicas, unavailableReplicas, creationTimestamp, containers, labels] = _.zipWith(_.at(item, [
+                    "deploy.metadata.name",
+                    "deploy.status.replicas",
+                    "deploy.status.updatedReplicas",
+                    "deploy.status.unavailableReplicas",
+                    "deploy.metadata.creationTimestamp",
+                    "containers",
+                    "deploy.metadata.labels"
+                ]), [
+                    _.identity,
+                    _.toInteger,
+                    _.toInteger,
+                    _.toInteger,
+                    Date.parse,
+                    _.identity,
+                    _.identity,
+                ], (v, f)=> f(v));
+                console.log(`container : ${util.format(containers)}`);
+                table.push([
+                    name,
+                    replicas,
+                    updatedReplicas,
+                    replicas - unavailableReplicas,
+                    timeConverter(Date.now() - creationTimestamp),
+                    ...(includeContainers ? [containers.map(({ image })=> _.truncate(image, { length: 50 })).join('\n')] : []),
+                    _.truncate(_.map(labels, (v,k)=> `${k}=${v}`).join(' '), { length: 50 })
+                ]);
+            });
 
-//lastUpdateTime: '2017-09-17T05:09:28Z',
-       //lastTransitionTime: '2017-09-17T05:09:28Z',
-
-
-assert(table);
-
-  _.forEach(v, (d)=>{
-     let status = _.get(d, "deploy.status")
-     console.log(`status  = ${util.format(status)}`);
-     let meta = _.get(d, "deploy.metadata");
-     let spec = _.get(d, "deploy.spec");
-     let name = _.get(meta, "name");
-     console.log(`meta  = ${util.format(meta)}`);
-     console.log(`spec  = ${util.format(spec)}`);
-     let desired = _.get(status, "replicas");
-     let current = _.get(status , "updatedReplicas");
-     let available = parseInt(desired)- parseInt(_.get(status , "unavailableReplicas"))
-     let upToDate = "----";
-     let containers = util.format(_.get(d, "containers[0].image"));
-     let selector  =  util.format(_.get(meta, "labels"));
-     let creationTime = _.get(meta, "creationTimestamp");
-     let diff =  moment.utc().diff(moment.utc(creationTime));
-
-     let age = `${Math.floor(diff/milisecInHour)}h`;
-
-    table.push(
-        [name , desired, current,upToDate, available, age ,containers, selector]);
-  })
-  console.log(table.toString());
-})
-/*
-status:
-    { observedGeneration: 1,
-      replicas: 1,
-      updatedReplicas: 1,
-      readyReplicas: 1,
-      availableReplicas: 1,
-      conditions: [Object] } },
-      */
+            return table.toString();
+        })
+        .mapErrors(({ message = "Unspecified" })=> message).log()
+        .toPromise();
+};
+console.log(process
+    .argv);
+generateDeploymentsConsoleReport(
+    process
+        .argv
+        .slice(2)
+        .reduce((ac, arg)=> _.assign(ac, argumentParsers.map((parser)=> parser(arg) || {}).reduce(_.merge)), {})
+    )
+    .then(console.info)
+    .catch(console.error);
