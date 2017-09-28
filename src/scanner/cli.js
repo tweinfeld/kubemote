@@ -10,13 +10,31 @@ const argumentParsers = [
     (str)=> ((match)=> match && { deploymentName: _.get(match, '0', '') })(str.match(/^\w+$/))
 ];
 
-const MILLISECONDS_IN_HOUR = 3600000;
-const HOURS_IN_DAYS  = 24;
-let timeConverter = (date)=>{
-   let hours = ~~(date/MILLISECONDS_IN_HOUR);
-   let days = ~~(hours/HOURS_IN_DAYS);
+const MIL_IN_SEC = 1000;
+const MIL_IN_MIN = 60000;
+const MIL_IN_HOUR = 1000*60*60;
+const MIL_IN_DAY = 1000*60*60*24;
 
-   return (days) ? [days, 'd'].join('') : [hours, 'h'];
+let timeConverter = (date)=>{
+
+   let time = {};
+
+     time.d = (~~(date/MIL_IN_DAY));
+     let current =   date%MIL_IN_DAY;
+     time.h = (~~(current/MIL_IN_HOUR));
+     current =  current%MIL_IN_HOUR
+     time.m = (~~(current/MIL_IN_MIN));
+     current = current%MIL_IN_MIN;
+     time.s = (~~(current/MIL_IN_SEC));
+     current =  current%MIL_IN_SEC;
+
+     time = _.pickBy(time, _.identity);
+
+   console.log("time "+ util.format(time));
+   let ret =  _.map(time, (v, k)=>v + `${k}:`)
+   .slice(0, _.values(time).length).join('');
+
+   return _.trimEnd(ret, ":");
 }
 const generateDeploymentsConsoleReport = function({ deploymentName = "", includeContainers = false }){
 
