@@ -4,9 +4,12 @@ const
     Table = require('cli-table'),
     Kubemote = require('../kubemote');
     const util  = require('util');
+    const minimist = require('minimist');
+
 
 const argumentParsers = [
     (str)=> ((match)=> match && { includeContainers: _.get(match, '3') !== "0" })(str.match(/^(-c|--containers?)(=([01]))?$/)),
+    (str)=> ((match)=> match && { showPodLabels: _.get(match, '3') !== "0" })(str.match(/^(-l|--showPodLabels?)(=([01]))?$/)),
     (str)=> ((match)=> match && { deploymentName: _.get(match, '0', '') })(str.match(/^\w+$/))
 ];
 
@@ -24,22 +27,13 @@ let timeConverter = (date)=>{
      let letter = ["d", "h", "m", "s"]
 
      factors.reduce((agg, factor)=>{
-       console.log(`factor:${factor}`);
+
         _.set(agg.time, letter[agg.index],~~(agg.rest/factor));
         agg.rest = agg.rest%factor;
         agg.index++;
         return agg;
       }, {time, index:0, rest:date})
 
-     /*time.d = (~~(date/MIL_IN_DAY));
-     let rest =   date%MIL_IN_DAY;
-     time.h = (~~(current/MIL_IN_HOUR));
-     rest =  current%MIL_IN_HOUR
-     time.m = (~~(current/MIL_IN_MIN));
-     rest = current%MIL_IN_MIN;
-     time.s = (~~(current/MIL_IN_SEC));
-     rest =  current%MIL_IN_SEC;
-     _flow(()=>)*/
 
      time = _.pickBy(time, _.identity);
      let ret =  _.map(time, (v, k)=>v + `${k}:`)
@@ -47,13 +41,14 @@ let timeConverter = (date)=>{
 
      return _.trimEnd(ret, ":");
 }
-const generateDeploymentsConsoleReport = function({ deploymentName = "", includeContainers = false }){
+const generateDeploymentsConsoleReport = function({ deploymentName = "", includeContainers = false, showPods=false }){
 
     let client = new Kubemote();
     return kefir
-        .fromPromise(client.getDeployments()).map()
-         .log('deploy->').flatMap((res)=> {
+        .fromPromise(client.getDeployments())
+         .flatMap((res)=> {
             //console.log(`name ${_.get(res, 'metadata.name')}`);
+            console.log('res:'  + util.format(res));
             return kefir.combine(
                 (res["kind"] === "Deployment" ? [res] : res["items"])
                     .filter((deploymentName &&_.matchesProperty('metadata.name', deploymentName)) || _.constant(true))
@@ -63,23 +58,31 @@ const generateDeploymentsConsoleReport = function({ deploymentName = "", include
                             includeContainers ?
                                 kefir
                                     .fromPromise(client.getPods(_.get(deploymentDoc, 'spec.selector.matchLabels')))
-                                    .map(({ items: podDocs })=>({ containers: _(podDocs).map('status.containerStatuses').flatten().value() })) :
+                                    .map(({ items: podDocs })=>(
+                                      {  podNames : _(podDocs).map('metadata.name').flatten().value(),
+                                         containers: _(podDocs).map('status.containerStatuses').flatten().value() })) :
                                 kefir.constant({})
-                        ], _.merge)
+                        ], _.merge).log('deploy->!')
                     })
             );
         }).log('->')
         .map((report)=>{
-            console.log('adding report');
-            let table = new Table({ head: _.compact([ "Name", "Desired", "Current", "Available", "Age", includeContainers && "Images(s)", "Selectors" ]) });
+            console.log(`adding report ${util.format(report)}`);
+            let table = new Table({ head: _.compact(
+              [ "Name", "Desired", "Current", "Available",
+               "Age",
+                includeContainers && "Images(s)",
+                showPods && "Pod(s)",
+                "Selectors" ]) });
             report.forEach((item)=>{
-                let [name, replicas, updatedReplicas, unavailableReplicas, creationTimestamp, containers, labels] = _.zipWith(_.at(item, [
+                let [name, replicas, updatedReplicas, unavailableReplicas, creationTimestamp, containers, podNames, labels] = _.zipWith(_.at(item, [
                     "deploy.metadata.name",
                     "deploy.status.replicas",
                     "deploy.status.updatedReplicas",
                     "deploy.status.unavailableReplicas",
                     "deploy.metadata.creationTimestamp",
                     "containers",
+                    "podNames",
                     "deploy.metadata.labels"
                 ]), [
                     _.identity,
@@ -89,8 +92,11 @@ const generateDeploymentsConsoleReport = function({ deploymentName = "", include
                     Date.parse,
                     _.identity,
                     _.identity,
+                    _.identity,
                 ], (v, f)=> f(v));
-                console.log(`container : ${util.format(containers)}`);
+
+                console.log(`podNames ${util.format(podNames)}`);
+
                 table.push([
                     name,
                     replicas,
@@ -98,22 +104,24 @@ const generateDeploymentsConsoleReport = function({ deploymentName = "", include
                     replicas - unavailableReplicas,
                     timeConverter(Date.now() - creationTimestamp),
                     ...(includeContainers ? [containers.map(({ image })=> _.truncate(image, { length: 50 })).join('\n')] : []),
+                    ...(showPods ? [podNames.map((pod)=> _.truncate(pod, { length: 50 })).join('\n')] : []),
                     _.truncate(_.map(labels, (v,k)=> `${k}=${v}`).join(' '), { length: 50 })
                 ]);
             });
 
             return table.toString();
         })
-        .mapErrors(({ message = "Unspecified" })=> message).log()
+        .mapErrors(({ message = "Unspecified" })=> message)
         .toPromise();
 };
-console.log(process
-    .argv);
+
+let argv = minimist(process.argv.slice(2), {alias:{
+  c : "includeContainers",
+  d : "deploymentName"
+}, default: {showPods : true}});
+
 generateDeploymentsConsoleReport(
-    process
-        .argv
-        .slice(2)
-        .reduce((ac, arg)=> _.assign(ac, argumentParsers.map((parser)=> parser(arg) || {}).reduce(_.merge)), {})
+      argv
     )
     .then(console.info)
     .catch(console.error);
