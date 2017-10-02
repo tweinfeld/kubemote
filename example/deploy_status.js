@@ -2,7 +2,7 @@ const
     _ = require('lodash'),
     kefir = require('kefir'),
     Table = require('cli-table'),
-    Kubemote = require('../kubemote'),
+    Kubemote = require('../src/kubemote'),
     minimist = require('minimist');
 
 
