@@ -11,3 +11,11 @@ kefir.fromPromise(new Promise((yes , no)=>{
  kefir.combine([1 ,2 ,4].map((e)=>{
    return kefir.constant({a:'a'+e})
  })).flatten().log();
+
+ function* genFuncWithReturn() {
+     yield console.log('a');
+     yield console.log('b');
+     return 'result';
+ }
+genFuncWithReturn();
+setTimeout(genFuncWithReturn, 1000);

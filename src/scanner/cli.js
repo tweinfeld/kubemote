@@ -7,14 +7,6 @@ const
     const minimist = require('minimist');
 
 
-const argumentParsers = [
-    (str)=> ((match)=> match && { includeContainers: _.get(match, '3') !== "0" })(str.match(/^(-c|--containers?)(=([01]))?$/)),
-    (str)=> ((match)=> match && { showPodLabels: _.get(match, '3') !== "0" })(str.match(/^(-l|--showPodLabels?)(=([01]))?$/)),
-    (str)=> ((match)=> match && { deploymentName: _.get(match, '0', '') })(str.match(/^\w+$/))
-];
-
-
-
 let timeConverter = (date)=>{
 
   const MIL_IN_SEC = 1000;
@@ -48,32 +40,34 @@ const generateDeploymentsConsoleReport = function({ deploymentName = "", include
         .fromPromise(client.getDeployments())
          .flatMap((res)=> {
             //console.log(`name ${_.get(res, 'metadata.name')}`);
-            console.log('res:'  + util.format(res));
+
             return kefir.combine(
                 (res["kind"] === "Deployment" ? [res] : res["items"])
                     .filter((deploymentName &&_.matchesProperty('metadata.name', deploymentName)) || _.constant(true))
                     .map((deploymentDoc)=>{
                         return kefir.combine([
                             kefir.constant({ deploy: deploymentDoc }),
-                            includeContainers ?
+                            (includeContainers || showPods) ?
                                 kefir
                                     .fromPromise(client.getPods(_.get(deploymentDoc, 'spec.selector.matchLabels')))
                                     .map(({ items: podDocs })=>(
-                                      {  podNames : _(podDocs).map('metadata.name').flatten().value(),
+                                      {  podNames : _(podDocs).map('metadata.name').value(),
                                          containers: _(podDocs).map('status.containerStatuses').flatten().value() })) :
                                 kefir.constant({})
-                        ], _.merge).log('deploy->!')
+                        ], _.merge)
                     })
             );
         }).log('->')
         .map((report)=>{
-            console.log(`adding report ${util.format(report)}`);
+
+            //console.log(`adding report ${util.format(report)}`);
             let table = new Table({ head: _.compact(
               [ "Name", "Desired", "Current", "Available",
                "Age",
                 includeContainers && "Images(s)",
                 showPods && "Pod(s)",
                 "Selectors" ]) });
+
             report.forEach((item)=>{
                 let [name, replicas, updatedReplicas, unavailableReplicas, creationTimestamp, containers, podNames, labels] = _.zipWith(_.at(item, [
                     "deploy.metadata.name",
@@ -95,7 +89,7 @@ const generateDeploymentsConsoleReport = function({ deploymentName = "", include
                     _.identity,
                 ], (v, f)=> f(v));
 
-                console.log(`podNames ${util.format(podNames)}`);
+
 
                 table.push([
                     name,
@@ -108,17 +102,25 @@ const generateDeploymentsConsoleReport = function({ deploymentName = "", include
                     _.truncate(_.map(labels, (v,k)=> `${k}=${v}`).join(' '), { length: 50 })
                 ]);
             });
-
+            console.log(`-c ${includeContainers}`);
             return table.toString();
         })
         .mapErrors(({ message = "Unspecified" })=> message)
         .toPromise();
 };
 
-let argv = minimist(process.argv.slice(2), {alias:{
+let argv = minimist(process.argv.slice(2),
+{ alias:{
   c : "includeContainers",
-  d : "deploymentName"
-}, default: {showPods : true}});
+  d : "deploymentName",
+  p : "showPods",
+  w : "wide"
+},
+  boolean: ["includeContainers", "showPods"],
+  default: {deploymentName: ""/*,showPods : true,includeContainers: true*/}
+
+});
+
 
 generateDeploymentsConsoleReport(
       argv
