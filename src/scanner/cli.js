@@ -33,9 +33,9 @@ let timeConverter = (date)=>{
 
      return _.trimEnd(ret, ":");
 }
-const generateDeploymentsConsoleReport = function({ deploymentName = "", includeContainers = false, showPods=false }){
-
-    let client = new Kubemote();
+const generateDeploymentsConsoleReport = function({ namespace="default", deploymentName = "", includeContainers = false, showPods=false }){
+    console.log(`namespace ${namespace}`);
+    let client = new Kubemote(Kubemote.CONFIGURATION_FILE({namespace}));
     return kefir
         .fromPromise(client.getDeployments())
          .flatMap((res)=> {
@@ -112,15 +112,15 @@ const generateDeploymentsConsoleReport = function({ deploymentName = "", include
 let argv = minimist(process.argv.slice(2),
 { alias:{
   c : "includeContainers",
-  d : "deploymentName",
+  deploy : "deploymentName",
+  ns : "namespace",
   p : "showPods",
   w : "wide"
 },
   boolean: ["includeContainers", "showPods"],
-  default: {deploymentName: ""/*,showPods : true,includeContainers: true*/}
+  default: {deploymentName: "", namespace : "default"/*,showPods : true,includeContainers: true*/}
 
 });
-
 
 generateDeploymentsConsoleReport(
       argv
