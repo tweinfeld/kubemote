@@ -3,6 +3,7 @@ const
     kefir = require('kefir'),
     Table = require('cli-table'),
     Kubemote = require('../src/kubemote'),
+    util  = require('util'),
     minimist = require('minimist');
 
 
@@ -36,9 +37,10 @@ const generateDeploymentsConsoleReport = function({
     namespace = "default",
     deploymentName = "",
     showImages = false,
-    showPods = false
+    showPods = false,
+    auth =  Kubemote.CONFIGURATION_FILE({ namespace })
 }) {
-    let client = new Kubemote(Kubemote.CONFIGURATION_FILE({ namespace }));
+    let client = new Kubemote(auth);
 
     return kefir
         .fromPromise(client.getDeployments())
@@ -118,12 +120,16 @@ let argv = minimist(
             "i": "showImages",
             "deploy": "deploymentName",
             "ns": "namespace",
-            "p": "showPods"
+            "p": "showPods",
+
         },
-        boolean: ["showImages", "showPods"],
+        boolean: ["showImages", "showPods", "auth"],
         default: { deploymentName: "", namespace: "default"/*,showPods : true,includeContainers: true*/ }
     }
 );
+argv.auth = (argv.auth) ? {host: argv.host,port: argv.port, port: argv.port,
+   protocol: argv.protocol}: undefined;
+console.log(util.inspect(argv.auth));
 
 generateDeploymentsConsoleReport(argv)
     .then(console.info)
