@@ -6,7 +6,9 @@ const
     util  = require('util'),
     minimist = require('minimist');
 
-
+let usage = ()=>{
+  console.log("use as following ...");
+}
 let timeConverter = (date)=> {
 
     const MIL_IN_SEC = 1000;
@@ -69,12 +71,7 @@ const generateDeploymentsConsoleReport = function({
         })
         .map((report)=> {
             let table = new Table({
-                head: _.compact(
-                    ["Name", "Desired", "Current", "Available",
-                        "Age",
-                        showImages && "Images(s)",
-                        showPods && "Pod(s)",
-                        "Selectors"])
+                head: _.compact(columns)
             });
 
             report.forEach((item) => {
@@ -99,16 +96,20 @@ const generateDeploymentsConsoleReport = function({
                 ], (v, f) => f(v));
 
 
-                table.push([
+               let model = [
                     name,
                     replicas,
                     updatedReplicas,
                     replicas - unavailableReplicas,
                     timeConverter(Date.now() - creationTimestamp),
-                    ...(showImages ? [containers.map(({image}) => _.truncate(image, {length: 50})).join('\n')] : []),
+                    ...(showImages ? [containers.map(({image}) => _.truncate(image, {length: 80})).join('\n')] : []),
                     ...(showPods ? [podNames.map((pod) => _.truncate(pod, {length: 50})).join('\n')] : []),
-                    _.truncate(_.map(labels, (v, k) => `${k}=${v}`).join('\n'), {length: 50})
-                ]);
+                    _.truncate(_.map(labels, (v, k) => `${k}=${v}`).join('\n'), {length: 100})
+                ]
+
+                let row = model.filter((v , index)=>columns[index]);
+                table.push(row);
+
             });
             return table.toString();
         })
@@ -122,14 +123,38 @@ let argv = minimist(
         alias: {
             "i": "showImages",
             "deploy": "deploymentName",
-            "ns": "namespace",
-            "p": "showPods",
+            "ns" : "namespace",
+            "p"  : "showPods",
+            "col": "columns",
+            "h"  : "help"
 
         },
-        boolean: ["showImages", "showPods"],
-        default: { deploymentName: "", namespace: "default"/*,showPods : true,includeContainers: true*/ }
+        boolean: ["showImages", "showPods", "help"],
+        default: { deploymentName: "", namespace: "default" ,cols : "name,age,desired,current"/*,showPods : true,includeContainers: true*/ }
     }
 );
+let  columns ={
+  name: "Name",
+  desired: "Desired",
+  current : "Current",
+  available : "Available",
+  age : "Age",
+  images : "Images(s)",
+  pods : "Pod(s)",
+  selectors : "Selectors"
+}
+if (argv.help)
+ {
+   usage();
+   return process.exit(1);
+ }
+let selected = ((cols)=>{
+  return  _(cols).trim().split(',').map(_.trim);
+})(argv.cols)
+
+columns = _(columns).map((v, k)=>{
+    return (selected.indexOf(k) !==-1) ?v : false;
+}).value();
 
 
 generateDeploymentsConsoleReport(argv)
