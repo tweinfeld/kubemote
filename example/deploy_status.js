@@ -6,8 +6,21 @@ const
     util  = require('util'),
     minimist = require('minimist');
 
+
+
+let  columns ={
+      name: "Name",
+      desired: "Desired",
+      current : "Current",
+      available : "Available",
+      age : "Age",
+      images : "Images(s)",
+      pods : "Pod(s)",
+      selectors : "Selectors"
+}
 let usage = ()=>{
-  console.log("use as following ...");
+  console.log(`use flag --col=`);
+  console.log(`available colums are ${_(columns).keys().join(' ,')}`);
 }
 let timeConverter = (date)=> {
 
@@ -133,16 +146,7 @@ let argv = minimist(
         default: { deploymentName: "", namespace: "default" ,cols : "name,age,desired,current"/*,showPods : true,includeContainers: true*/ }
     }
 );
-let  columns ={
-  name: "Name",
-  desired: "Desired",
-  current : "Current",
-  available : "Available",
-  age : "Age",
-  images : "Images(s)",
-  pods : "Pod(s)",
-  selectors : "Selectors"
-}
+
 if (argv.help)
  {
    usage();
