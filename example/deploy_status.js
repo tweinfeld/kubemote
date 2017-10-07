@@ -38,9 +38,12 @@ const generateDeploymentsConsoleReport = function({
     deploymentName = "",
     showImages = false,
     showPods = false,
-    auth =  Kubemote.CONFIGURATION_FILE({ namespace })
+    host, port, protocol,
+    auth={host, port, protocol}
 }) {
-    let client = new Kubemote(auth);
+    let useCurrentContext = _.chain(auth).filter(_.identity).isEmpty().value();
+    let client = new Kubemote(useCurrentContext?
+       Kubemote.CONFIGURATION_FILE({ namespace }) : auth);
 
     return kefir
         .fromPromise(client.getDeployments())
@@ -104,7 +107,7 @@ const generateDeploymentsConsoleReport = function({
                     timeConverter(Date.now() - creationTimestamp),
                     ...(showImages ? [containers.map(({image}) => _.truncate(image, {length: 50})).join('\n')] : []),
                     ...(showPods ? [podNames.map((pod) => _.truncate(pod, {length: 50})).join('\n')] : []),
-                    _.truncate(_.map(labels, (v, k) => `${k}=${v}`).join(' '), {length: 50})
+                    _.truncate(_.map(labels, (v, k) => `${k}=${v}`).join('\n'), {length: 50})
                 ]);
             });
             return table.toString();
@@ -123,13 +126,11 @@ let argv = minimist(
             "p": "showPods",
 
         },
-        boolean: ["showImages", "showPods", "auth"],
+        boolean: ["showImages", "showPods"],
         default: { deploymentName: "", namespace: "default"/*,showPods : true,includeContainers: true*/ }
     }
 );
-argv.auth = (argv.auth) ? {host: argv.host,port: argv.port, port: argv.port,
-   protocol: argv.protocol}: undefined;
-console.log(util.inspect(argv.auth));
+
 
 generateDeploymentsConsoleReport(argv)
     .then(console.info)
