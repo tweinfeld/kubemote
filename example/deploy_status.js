@@ -41,7 +41,7 @@ const generateDeploymentsConsoleReport = function({
     host, port, protocol,
     auth={host, port, protocol}
 }) {
-    let useCurrentContext = _.chain(auth).filter(_.identity).isEmpty().value();
+    let useCurrentContext = _(auth).omitBy(_.isUndefined).isEmpty();
     let client = new Kubemote(useCurrentContext?
        Kubemote.CONFIGURATION_FILE({ namespace }) : auth);
 
