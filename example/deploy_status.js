@@ -3,6 +3,7 @@ const
     kefir = require('kefir'),
     Table = require('cli-table'),
     Kubemote = require('../src/kubemote'),
+    util  = require('util'),
     minimist = require('minimist');
 
 
@@ -36,9 +37,13 @@ const generateDeploymentsConsoleReport = function({
     namespace = "default",
     deploymentName = "",
     showImages = false,
-    showPods = false
+    showPods = false,
+    host, port, protocol,
+    auth={host, port, protocol}
 }) {
-    let client = new Kubemote(Kubemote.CONFIGURATION_FILE({ namespace }));
+    let useCurrentContext = _(auth).omitBy(_.isUndefined).isEmpty();
+    let client = new Kubemote(useCurrentContext?
+       Kubemote.CONFIGURATION_FILE({ namespace }) : auth);
 
     return kefir
         .fromPromise(client.getDeployments())
@@ -102,7 +107,7 @@ const generateDeploymentsConsoleReport = function({
                     timeConverter(Date.now() - creationTimestamp),
                     ...(showImages ? [containers.map(({image}) => _.truncate(image, {length: 50})).join('\n')] : []),
                     ...(showPods ? [podNames.map((pod) => _.truncate(pod, {length: 50})).join('\n')] : []),
-                    _.truncate(_.map(labels, (v, k) => `${k}=${v}`).join(' '), {length: 50})
+                    _.truncate(_.map(labels, (v, k) => `${k}=${v}`).join('\n'), {length: 50})
                 ]);
             });
             return table.toString();
@@ -118,12 +123,14 @@ let argv = minimist(
             "i": "showImages",
             "deploy": "deploymentName",
             "ns": "namespace",
-            "p": "showPods"
+            "p": "showPods",
+
         },
         boolean: ["showImages", "showPods"],
         default: { deploymentName: "", namespace: "default"/*,showPods : true,includeContainers: true*/ }
     }
 );
+
 
 generateDeploymentsConsoleReport(argv)
     .then(console.info)
