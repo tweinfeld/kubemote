@@ -33,7 +33,8 @@ let cmdLineArgs = yargs
         description: "Report type",
         choices: ["table", "json"],
         default: "table",
-        type: "string"
+        type: "string",
+        coerce: _.flow((v)=> [v], _.flatten, _.last)
     })
     .group(["port", "host", "protocol", "context"], 'Connection:')
     .option('port', {
