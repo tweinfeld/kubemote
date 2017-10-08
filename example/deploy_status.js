@@ -191,7 +191,7 @@ generateDeploymentsReport(
     Object.assign(
         _.pick(cmdLineArgs, ["namespace", "deployment", "context"]),
         { extended: cmdLineArgs["col"].some((selectedColumn)=> ["pods", "images"].includes(selectedColumn)) },
-        _.at(cmdLineArgs, ["port", "host", "protocol"]).some(Boolean) && { port, host, protocol }
+        _.at(cmdLineArgs, ["port", "host", "protocol"]).some(Boolean) && _.zipObject(["port", "host", "protocol"], _.at(cmdLineArgs, ["port", "host", "protocol"]))
     ))
     .then(_.partial(reportFormatters[cmdLineArgs["format"]], _.uniq(["name", ...cmdLineArgs["col"]])))
     .then(console.log)
