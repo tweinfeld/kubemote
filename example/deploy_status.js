@@ -142,28 +142,23 @@ const generateDeploymentsReport = function({
 const reportFormatters = {
     "json": (columns, rawReport)=> rawReport.map((row)=> _.pick(row, columns)),
     "table": (function(){
-        const timeConverter = (date)=> {
-            const MIL_IN_SEC = 1000;
-            const MIL_IN_MIN = 60 * MIL_IN_SEC;
-            const MIL_IN_HOUR = 60 * MIL_IN_MIN;
-            const MIL_IN_DAY = 24 * MIL_IN_HOUR;
+            const timeConverter = (function(){
+                const
+                    MIL_IN_SEC = 1000,
+                    MIL_IN_MIN = 60 * MIL_IN_SEC,
+                    MIL_IN_HOUR = 60 * MIL_IN_MIN,
+                    MIL_IN_DAY = 24 * MIL_IN_HOUR,
+                    factors = [MIL_IN_DAY, MIL_IN_HOUR, MIL_IN_MIN, MIL_IN_SEC],
+                    captions = ["d", "h", "m", "s"];
 
-            let time = {};
-            let factors = [MIL_IN_DAY, MIL_IN_HOUR, MIL_IN_MIN, MIL_IN_SEC];
-            let letter = ["d", "h", "m", "s"];
-
-            factors.reduce((agg, factor)=> {
-                _.set(agg.time, letter[agg.index], ~~(agg.rest / factor));
-                agg.rest = agg.rest % factor;
-                agg.index++;
-                return agg;
-            }, {time, index: 0, rest: date});
-
-            time = _.pickBy(time, _.identity);
-            let ret = _.map(time, (v, k) => v + `${k}:`).slice(0, _.values(time).length).join('');
-
-            return _.trimEnd(ret, ":");
-        };
+                return (span)=>factors.map((function(ac){
+                    return (factor, index)=> {
+                        let section = [_.padStart(~~(ac / factor), 2, "0"), captions[index]].join('');
+                        ac = ac % factor;
+                        return section;
+                    }
+                })(span)).join(':');
+            })();
 
         const columnsFormats = {
             "name": { caption: "Name" },
