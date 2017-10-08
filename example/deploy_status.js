@@ -140,9 +140,7 @@ const generateDeploymentsReport = function({
 };
 
 const reportFormatters = {
-    "json": function(columns, rawReport){
-        return rawReport.map((row)=> _.pick(row, columns));
-    },
+    "json": (columns, rawReport)=> rawReport.map((row)=> _.pick(row, columns)),
     "table": (function(){
         const timeConverter = (date)=> {
             const MIL_IN_SEC = 1000;
@@ -192,6 +190,6 @@ generateDeploymentsReport(
         { extended: cmdLineArgs["col"].some((selectedColumn)=> ["pods", "images"].includes(selectedColumn)) },
         _.at(cmdLineArgs, ["port", "host", "protocol"]).some(Boolean) && { port, host, protocol }
     ))
-    .then(_.partial(reportFormatters[cmdLineArgs["format"]], cmdLineArgs["col"]))
+    .then(_.partial(reportFormatters[cmdLineArgs["format"]], _.uniq(["name", ...cmdLineArgs["col"]])))
     .then(console.log)
     .catch(console.warn);
