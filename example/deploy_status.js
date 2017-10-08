@@ -142,7 +142,7 @@ const generateDeploymentsReport = function({
 const reportFormatters = {
     "json": (columns, rawReport)=> rawReport.map((row)=> _.pick(row, columns)),
     "table": (function(){
-            const timeConverter = (function(){
+            const timeSpanFormatter = (function(){
                 const
                     MIL_IN_SEC = 1000,
                     MIL_IN_MIN = 60 * MIL_IN_SEC,
@@ -151,7 +151,7 @@ const reportFormatters = {
                     factors = [MIL_IN_DAY, MIL_IN_HOUR, MIL_IN_MIN, MIL_IN_SEC],
                     captions = ["d", "h", "m", "s"];
 
-                return (span)=>factors.map((function(ac){
+                return (span)=> factors.map((function(ac){
                     return (factor, index)=> {
                         let section = [_.padStart(~~(ac / factor), 2, "0"), captions[index]].join('');
                         ac = ac % factor;
@@ -165,7 +165,7 @@ const reportFormatters = {
             "desired": { caption: "Desired" },
             "current": { caption: "Current" },
             "available":  { caption: "Available" },
-            "age": { caption: "Age", formatter: timeConverter },
+            "age": { caption: "Age", formatter: timeSpanFormatter },
             "images": { caption: "Images(s)", formatter: (containers)=> containers.map(({image})=> _.truncate(image, { length: 80 })).join('\n') },
             "pods": { caption: "Pod(s)", formatter: (podNames)=> podNames.map((pod)=> _.truncate(pod, { length: 50 })).join('\n') },
             "selectors": { caption: "Selectors", formatter: (labels)=> _.truncate(_.map(labels, (v, k) => `${k}=${v}`).join('\n'), { length: 100 }) }
