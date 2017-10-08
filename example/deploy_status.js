@@ -149,15 +149,22 @@ const reportFormatters = {
                     MIL_IN_HOUR = 60 * MIL_IN_MIN,
                     MIL_IN_DAY = 24 * MIL_IN_HOUR,
                     factors = [MIL_IN_DAY, MIL_IN_HOUR, MIL_IN_MIN, MIL_IN_SEC],
-                    captions = ["d", "h", "m", "s"];
+                    captions = ["s", "m", "h", "d"];
 
-                return (span)=> factors.map((function(ac){
-                    return (factor, index)=> {
-                        let section = [_.padStart(~~(ac / factor), 2, "0"), captions[index]].join('');
-                        ac = ac % factor;
-                        return section;
-                    }
-                })(span)).join(':');
+                return (span)=>
+                    _(factors)
+                        .map((function(ac){
+                            return (factor)=> {
+                                let sectionValue = ~~(ac / factor);
+                                ac = ac % factor;
+                                return sectionValue;
+                            }
+                        })(span))
+                        .dropWhile(_.negate(Boolean))
+                        .reverse()
+                        .map((v, index)=> [_.padStart(v, 2, '0'), captions[index]].join(''))
+                        .reverse()
+                        .join(':');
             })();
 
         const columnsFormats = {
