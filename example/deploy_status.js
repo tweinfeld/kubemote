@@ -7,6 +7,7 @@ const
 
 let cmdLineArgs = yargs
     .version(false)
+    .usage("$0 --columns [[column identifiers]] --context [context] --deploy [deployment] --namespace [namespace] --format [json|table] --host [host] --port [port] --protocol [http|https]")
     .group(["deployment", "namespace"], 'Query Options:')
     .option('deployment', {
         type: "string",
@@ -138,7 +139,7 @@ const generateDeploymentsReport = function({
         .toPromise();
 };
 
-const formatters = {
+const reportFormatters = {
     "json": function(columns, rawReport){
         return rawReport.map((row)=> _.pick(row, columns));
     },
@@ -191,6 +192,6 @@ generateDeploymentsReport(
         { extended: cmdLineArgs["col"].some((selectedColumn)=> ["pods", "images"].includes(selectedColumn)) },
         _.at(cmdLineArgs, ["port", "host", "protocol"]).some(Boolean) && { port, host, protocol }
     ))
-    .then(_.partial(formatters[cmdLineArgs["format"]], cmdLineArgs["col"]))
+    .then(_.partial(reportFormatters[cmdLineArgs["format"]], cmdLineArgs["col"]))
     .then(console.log)
     .catch(console.warn);
