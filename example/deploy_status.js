@@ -17,14 +17,14 @@ let cmdLineArgs = yargs
     .option('namespace', {
         type: "string",
         description: "Query within a namespace",
-        default: "default",
+        default:  "default",
         alias: "ns"
     })
     .group(["columns", "format"], 'Report Composition:')
     .option('columns', {
         alias: "col",
         type: "array",
-        default: ["name", "age", "desired", "current"],
+        default: ["name", "desired", "current", "available", "age", "images", "pods"],
         description: "Columns to include in the report",
         choices: ["name", "desired", "current", "available", "age", "images", "pods", "selectors"],
         demandOption: "Please provide a list of required columns"
@@ -186,6 +186,7 @@ const reportFormatters = {
         };
     })()
 };
+
 
 generateDeploymentsReport(
     Object.assign(
