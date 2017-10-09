@@ -40,20 +40,17 @@ let cmdLineArgs = yargs
     .option('port', {
         type: "number",
         desc: "The port number to use when connecting",
-        default: 8001,
         implies: ["host", "protocol"]
     })
     .option('host', {
         type: "string",
         desc: "The host name to use when connecting",
-        default : "127.0.0.1",
         implies: ["port", "protocol"]
     })
     .option('protocol', {
         type: "string",
         desc: "The protocol to use for connection",
         choices: ["http", "https"],
-        default : "http",
         implies: ["host", "port"]
     })
     .option('context', {
