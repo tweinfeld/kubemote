@@ -1,0 +1,36 @@
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: imageinfo
+  #namespace: kube-system
+  labels:
+    k8s-app: fluentd-logging
+spec:
+  selector:
+    matchLabels:
+      name: imageinfo
+  template:
+    metadata:
+      labels:
+        name: imageinfo
+    spec:
+      containers:
+      - name: imageinfo
+        args:
+        - -c
+        - env
+        #- docker inspect $(docker images --no-trunc -aq) && sleep 50
+        command:
+        - /bin/sh  && sleep 100 #/bin/sh
+        env:
+        - name: DOCKER_API_VERSION
+          value: "1.23"
+        image: docker:17.03
+        volumeMounts:
+        - name: docker-sock
+          mountPath: /var/run
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - hostPath:
+          path: /var/run
+        name: docker-sock

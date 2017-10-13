@@ -31,7 +31,7 @@ const
                     .fromEvents(request, 'response')
                     .merge(kefir.fromEvents(request, 'error').flatMap(kefir.constantError))
                     .flatMap((response)=> kefir.fromEvents(response.pipe(splitStream(null, null, { trailing: false })), 'data'))
-                    .map(JSON.parse)
+                    .map(JSON.parse).log('events=>')
                     .takeUntilBy(
                         kefir
                             .fromEvents(request, 'socket')
@@ -206,6 +206,7 @@ module.exports = class Kubemote extends EventEmitter {
     }
 
     getPodLogs({ podName }){
+      console.log(`log for pod ${podName}`);
         const request = this[REQUEST]({
             path: `/api/v1/namespaces/$\{namespace\}/pods/${podName}/log`
         });
@@ -267,10 +268,10 @@ module.exports = class Kubemote extends EventEmitter {
         }));
     }
 
-    watchJob({ jobName }){
+    watchJob({ jobName, selector }){
         return Promise.resolve(createRequestSendWatchEvents.call(this, {
             method: "GET",
-            path: `/apis/batch/v1/watch/namespaces/$\\{namespace\\}/jobs/${jobName}`,
+            path: "/apis/batch/v1/watch/namespaces/${namespace}/jobs/" + `${jobName}`,
             qs: { includeUninitialized: true, watch: true, labelSelector: serializeSelectorQuery(selector) }
         }));
     }

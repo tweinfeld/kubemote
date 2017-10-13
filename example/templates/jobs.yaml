@@ -1,0 +1,43 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+    #labels:
+    #  job-name: testjob
+    name: undefined
+spec:
+    activeDeadlineSeconds: 3600
+    completions: 1
+    parallelism: 1
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          job-name: testjob
+        name: probe
+      spec:
+        containers:
+        - args:
+          - -c
+          - docker inspect $(docker images --no-trunc -aq)  
+          command:
+          - /bin/sh
+          env:
+          - name: DOCKER_API_VERSION
+            value: "1.23"
+          image: docker:17.03
+          imagePullPolicy: IfNotPresent
+          name: probe
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /var/run
+            name: docker-sock
+        nodeName: minikube
+        restartPolicy: Never
+        schedulerName: default-scheduler
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - hostPath:
+            path: /var/run
+          name: docker-sock
