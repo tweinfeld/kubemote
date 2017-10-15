@@ -142,7 +142,7 @@ const generateDeploymentsReport = function({
         .takeErrors(1)
         .toPromise();
 };
-
+const reportLabels = require('./probe_images');
 const reportFormatters = {
     "json": (columns, rawReport)=> rawReport.map((row)=> _.pick(row, columns)),
     "table": (function(){
