@@ -3,6 +3,7 @@ const
     yargs = require('yargs'),
     kefir = require('kefir'),
     Table = require('cli-table'),
+    util  = require('util'),
     Kubemote = require('../src/kubemote');
 
 let cmdLineArgs = yargs
@@ -142,7 +143,7 @@ const generateDeploymentsReport = function({
         .takeErrors(1)
         .toPromise();
 };
-const reportLabels = require('./probe_images');
+const listImages = require('./probe_images').listImages;
 const reportFormatters = {
     "json": (columns, rawReport)=> rawReport.map((row)=> _.pick(row, columns)),
     "table": (function(){
@@ -177,14 +178,36 @@ const reportFormatters = {
             "current": { caption: "Current" },
             "available":  { caption: "Available" },
             "age": { caption: "Age", formatter: timeSpanFormatter },
-            "images": { caption: "Images(s)", formatter: (containers)=> containers.map(({image})=> _.truncate(image, { length: 80 })).join('\n') },
+            "images": { caption: "Images(s)", formatter: (containers, imagesList)=>{
+              let table = new Table({ head: ["image", "labels"],
+            colWidths : [10, 50]});
+               let all = containers.map(({image})=>{
+               //let truncatedImage = _.truncate(image, { length: 80 });
+               let tags =  _.filter(imagesList, (i)=>{
+                 console.log(`${image}-${util.format(i)} , ${i.RepoTags}`);
+                  return _(i.RepoTags).some((tag)=> tag === image)
+            }).map((i)=>i.Labels);
+               return image + "\nlabels : \n" + _.chain(tags).head().toPairs().value().join('\n');
+          })
+             return all.join('\n');
+        }
+      },
             "pods": { caption: "Pod(s)", formatter: (podNames)=> podNames.map((pod)=> _.truncate(pod, { length: 50 })).join('\n') },
             "selectors": { caption: "Selectors", formatter: (labels)=> _.truncate(_.map(labels, (v, k) => `${k}=${v}`).join('\n'), { length: 100 }) }
         };
 
         return function(columns, rawReport){
-            let table = new Table({ head: columns.map((columnName)=> columnsFormats[columnName]["caption"]) });
-            rawReport.forEach((row)=> table.push(columns.map((columnName)=> (columnsFormats[columnName].formatter || _.identity)(row[columnName]))));
+            let table = new Table(
+              { head: columns.map((columnName)=> columnsFormats[columnName]["caption"])
+              , colWidths: ((colWidths)=>{
+                _.fill(colWidths, 10);
+                 colWidths[colWidths.length - 2] = 60
+
+                 return colWidths;
+               })(Array(columns.length))
+
+          });
+            rawReport.forEach((row)=> table.push(columns.map((columnName)=> (columnsFormats[columnName].formatter || _.identity)(row[columnName], rawReport.imagesList))));
             return table.toString();
         };
     })()
@@ -197,6 +220,19 @@ generateDeploymentsReport(
         { extended: cmdLineArgs["col"].some((selectedColumn)=> ["pods", "images"].includes(selectedColumn)) },
         _.at(cmdLineArgs, ["port", "host", "protocol"]).some(Boolean) && _.pick(cmdLineArgs, ["port", "host", "protocol"])
     ))
+
+    .then((report)=>{
+
+
+      return listImages({}).scan((prev , next)=>{
+        prev.push(next);
+        return prev;
+      }, []).toPromise().then((images)=>{
+          report.imagesList = images;
+          return report;
+      })
+
+    })
     .then(_.partial(reportFormatters[cmdLineArgs["format"]], _.uniq(["name", ...cmdLineArgs["col"]])))
     .then(console.log)
     .catch(console.warn);

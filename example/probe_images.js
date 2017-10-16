@@ -19,6 +19,7 @@ let
     probeStream = kefir
         .fromPromise(remote.getNodes())
         .map((podList)=> _(podList["items"]).map('metadata.name').uniq().value())
+        .log('nodes=>')
         .flatMap((nodeNameList)=> {
             return kefir.combine(
                 nodeNameList.map((nodeName)=> {
@@ -26,8 +27,8 @@ let
                     _.set(jobTemplate, "metadata.name", jobName);
                     _.set(jobTemplate, "metadata.labels.job-name", jobName);
                     _.set(jobTemplate, "spec.template.metadata.labels.job-name", jobName);
-                    _.set(jobTemplate, "nodeName", nodeName);
-                    _.set(jobTemplate, "spec.template.spec.containers[0].args[1]", "docker inspect verchol/microjob:latest");
+                    _.set(jobTemplate, "spec.template.spec.nodeName", nodeName);
+                    _.set(jobTemplate, "spec.template.spec.containers[0].args[1]", "docker inspect $(docker images -aq --no-trunc)");
 
                     console.log(jobTemplate);
                     return kefir
@@ -47,7 +48,7 @@ let
 
                                 stream.onEnd(stopWatch);
                                 return stream;
-                            }),
+                            }).takeUntilBy(kefir.sequentially(10000, [1])),
                             kefir.later().flatMap(()=> kefir.fromPromise(remote.deleteJob({ jobName }))).ignoreValues()
                         ])
                 })
