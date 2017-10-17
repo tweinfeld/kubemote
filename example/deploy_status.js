@@ -1,5 +1,6 @@
 const
     _ = require('lodash'),
+    util = require('util'),
     yargs = require('yargs'),
     kefir = require('kefir'),
     Table = require('cli-table'),
@@ -141,7 +142,7 @@ const generateDeploymentsReport = function({
 };
 
 const reportFormatters = {
-    "json": (columns, rawReport)=> rawReport.map((row)=> _.pick(row, columns)),
+    "json": (columns, rawReport)=> util.inspect(rawReport.map((row)=> _.pick(row, columns)), { depth: 10 }),
     "table": (function(){
             const timeSpanFormatter = (function(){
                 const
