@@ -270,8 +270,8 @@ module.exports = class Kubemote extends EventEmitter {
     watchJob({ jobName }){
         return Promise.resolve(createRequestSendWatchEvents.call(this, {
             method: "GET",
-            path: `/apis/batch/v1/watch/namespaces/$\\{namespace\\}/jobs/${jobName}`,
-            qs: { includeUninitialized: true, watch: true, labelSelector: serializeSelectorQuery(selector) }
+            path: `/apis/batch/v1/watch/namespaces/$\{namespace\}/jobs/${jobName}`,
+            qs: { watch: true }
         }));
     }
 
