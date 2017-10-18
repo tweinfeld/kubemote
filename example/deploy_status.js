@@ -61,11 +61,120 @@ let cmdLineArgs = yargs
     })
     .argv;
 
+const getDeployments = (
+    client,
+    deployment = "",
+    includePods = false
+)=> {
+    return kefir
+        .fromPromise(client.getDeployments())
+        .flatMap((res)=> {
+            return kefir.combine(
+                (res["kind"] === "Deployment" ? [res] : res["items"])
+                    .filter((deployment && _.matchesProperty('metadata.name', deployment)) || _.constant(true))
+                    .map((deploymentDoc)=> {
+                        return kefir.combine([
+                            kefir.constant({ deploy: deploymentDoc }),
+                            includePods ?
+                                kefir
+                                    .fromPromise(client.getPods(_.get(deploymentDoc, 'spec.selector.matchLabels')))
+                                    .map(({ items: podDocs })=> ({ podDocs })) :
+                                kefir.constant({})
+                        ], _.merge);
+                    })
+            );
+        })
+        .takeErrors(1)
+        .toPromise();
+};
+
+const getImageLabels = (function(){
+
+    const
+        SECOND = 1000,
+        JOB_TIMEOUT = 30 * SECOND,
+        POD_KEEP_ALIVE = 30 * SECOND;
+
+    return (client, nodeName, imageName)=> {
+
+        let id = _.sampleSize("abcdefghijklmnopqrstuvwxyz0123456789".split(''), 10).join('');
+
+        return kefir.concat([
+            kefir.fromPromise(client.createJob({
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": {
+                    "name": id
+                },
+                "spec": {
+                    "activeDeadlineSeconds": POD_KEEP_ALIVE,
+                    "template": {
+                        "metadata": {
+                            "name": "probe"
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "command": ["/bin/sh"],
+                                    "args": ["-c", `docker inspect ${imageName}`],
+                                    "image": "docker:17.03",
+                                    "env": [{
+                                        "name": "DOCKER_API_VERSION",
+                                        "value": "1.23"
+                                    }],
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "probe",
+                                    "resources": {},
+                                    "volumeMounts": [
+                                        {
+                                            "mountPath": "/var/run",
+                                            "name": "docker-sock"
+                                        }
+                                    ]
+                                }
+                            ],
+                            nodeName,
+                            "restartPolicy": "Never",
+                            "volumes": [
+                                {
+                                    "name": "docker-sock",
+                                    "hostPath": {
+                                        "path": "/var/run"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            })).ignoreValues(),
+            kefir.fromPromise(client.watchJobList({"job-name": id})).ignoreValues(),
+            kefir
+                .fromEvents(client, 'watch')
+                .filter(_.matches({object: {kind: "Job", metadata: {name: id}}}))
+                .map(_.property('object'))
+                .filter((jobDoc) => _.has(jobDoc, 'status.completionTime'))
+                .merge(kefir.later(JOB_TIMEOUT).flatMap(() => kefir.constantError(new Error('Timed out waiting for K8 job to end'))))
+                .take(1)
+                .ignoreValues(),
+            kefir.later().flatMap(()=> kefir
+                .fromPromise(client.getPods({"job-name": id}))
+                .map(_.property('items.0.metadata.name'))
+                .flatMap((podName) => kefir.fromPromise(client.getPodLogs({podName})))
+                .map(_.flow(JSON.parse, _.property('0.ContainerConfig.Labels')))
+            )
+        ])
+        .takeErrors(1)
+        .onEnd(() => client.deleteJob({"jobName": id}))
+        .toPromise();
+    };
+})();
+
 const generateDeploymentsReport = function({
     context,
     namespace = "default",
     deployment = "",
-    extended = false,
+    includePods = false,
+    includeImages = false,
     host,
     port,
     protocol
@@ -79,38 +188,36 @@ const generateDeploymentsReport = function({
     }
 
     return kefir
-        .fromPromise(client.getDeployments())
-        .flatMap((res)=> {
-            return kefir.combine(
-                (res["kind"] === "Deployment" ? [res] : res["items"])
-                    .filter((deployment && _.matchesProperty('metadata.name', deployment)) || _.constant(true))
-                    .map((deploymentDoc)=> {
-                        return kefir.combine([
-                            kefir.constant({deploy: deploymentDoc}),
-                            extended ?
-                                kefir
-                                    .fromPromise(client.getPods(_.get(deploymentDoc, 'spec.selector.matchLabels')))
-                                    .map(({ items: podDocs }) => (
-                                        {
-                                            podNames: _(podDocs).map('metadata.name').value(),
-                                            containers: _(podDocs).map('status.containerStatuses').flatten().value()
-                                        }
-                                    )) :
-                                kefir.constant({})
-                        ], _.merge);
-                    })
-            );
+        .fromPromise(getDeployments(client, deployment, includePods || includeImages))
+        .flatMap((deployments)=> {
+            return kefir.combine([
+                kefir.constant(deployments),
+                includeImages ? kefir
+                    .combine(
+                        _(deployments)
+                            .chain()
+                            .map(({ podDocs })=> _(podDocs).map((podDoc)=> _.get(podDoc, 'spec.containers', []).map((container)=>({ image: container["image"], node: _.get(podDoc, 'spec.nodeName') }))).flatten().value())
+                            .flatten()
+                            .groupBy('image')
+                            .mapValues(_.flow(_.sample, _.property('node')))
+                            .map((nodeName, imageName)=> {
+                                return kefir
+                                    .fromPromise(getImageLabels(client, nodeName, imageName)).map((labels)=>({ [imageName]: labels }))
+                                    .flatMapErrors(_.partial(kefir.constant, {}));
+                            })
+                            .value(),
+                    _.merge) : kefir.constant({})
+            ]);
         })
-        .map((report)=>
+        .map(([report, images = {}])=>
             report.map((item)=> {
-                let [name, replicas, updatedReplicas, unavailableReplicas, creationTimestamp, containers, podNames, labels] = _.zipWith(_.at(item, [
+                let [name, replicas, updatedReplicas, unavailableReplicas, creationTimestamp, podDocs, labels] = _.zipWith(_.at(item, [
                     "deploy.metadata.name",
                     "deploy.status.replicas",
                     "deploy.status.updatedReplicas",
                     "deploy.status.unavailableReplicas",
                     "deploy.metadata.creationTimestamp",
-                    "containers",
-                    "podNames",
+                    "podDocs",
                     "deploy.metadata.labels"
                 ]), [
                     _.identity,
@@ -118,7 +225,6 @@ const generateDeploymentsReport = function({
                     _.toInteger,
                     _.toInteger,
                     Date.parse,
-                    _.identity,
                     _.identity,
                     _.identity,
                 ], (v, f) => f(v));
@@ -130,13 +236,13 @@ const generateDeploymentsReport = function({
                     available: replicas - unavailableReplicas,
                     age: Date.now() - creationTimestamp,
                     selectors: labels
-                }, extended && {
-                    images: containers,
-                    pods: podNames
-                });
+                },
+                includeImages && { images: _.pick(images, _(podDocs).map('spec.containers').flatten().map('image').value()) },
+                includePods && { pods: _(podDocs).map('metadata.name').value() }
+                );
             })
         )
-        .mapErrors(({ message = "Unspecified" } = {}) => message)
+        .mapErrors(({ message = "Unspecified" } = {})=> message)
         .takeErrors(1)
         .toPromise();
 };
@@ -175,7 +281,7 @@ const reportFormatters = {
             "current": { caption: "Current" },
             "available":  { caption: "Available" },
             "age": { caption: "Age", formatter: timeSpanFormatter },
-            "images": { caption: "Images(s)", formatter: (containers)=> containers.map(({image})=> _.truncate(image, { length: 80 })).join('\n') },
+            "images": { caption: "Images(s)", formatter: (images)=> _(images).map((labels, name)=> _.compact([name, !_.isEmpty(labels) && _.map(labels, (v,k)=>`  ${k}=${v}`).join('\n')]).join('\n')).join('\n') },
             "pods": { caption: "Pod(s)", formatter: (podNames)=> podNames.map((pod)=> _.truncate(pod, { length: 50 })).join('\n') },
             "selectors": { caption: "Selectors", formatter: (labels)=> _.truncate(_.map(labels, (v, k) => `${k}=${v}`).join('\n'), { length: 100 }) }
         };
@@ -188,11 +294,11 @@ const reportFormatters = {
     })()
 };
 
-
 generateDeploymentsReport(
     Object.assign(
         _.pick(cmdLineArgs, ["namespace", "deployment", "context"]),
-        { extended: cmdLineArgs["col"].some((selectedColumn)=> ["pods", "images"].includes(selectedColumn)) },
+        { includePods: cmdLineArgs["col"].some((selectedColumn)=> ["pods"].includes(selectedColumn)) },
+        { includeImages: cmdLineArgs["col"].some((selectedColumn)=> ["images"].includes(selectedColumn)) },
         _.at(cmdLineArgs, ["port", "host", "protocol"]).some(Boolean) && _.pick(cmdLineArgs, ["port", "host", "protocol"])
     ))
     .then(_.partial(reportFormatters[cmdLineArgs["format"]], _.uniq(["name", ...cmdLineArgs["col"]])))
