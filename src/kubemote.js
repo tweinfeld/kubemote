@@ -31,7 +31,7 @@ const
                     .fromEvents(request, 'response')
                     .merge(kefir.fromEvents(request, 'error').flatMap(kefir.constantError))
                     .flatMap((response)=> kefir.fromEvents(response.pipe(splitStream(null, null, { trailing: false })), 'data'))
-                    .map(JSON.parse).log('events=>')
+                    .map(JSON.parse)
                     .takeUntilBy(
                         kefir
                             .fromEvents(request, 'socket')

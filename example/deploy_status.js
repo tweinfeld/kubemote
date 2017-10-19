@@ -6,6 +6,7 @@ const
     util  = require('util'),
     Kubemote = require('../src/kubemote');
 
+let client;
 let cmdLineArgs = yargs
     .version(false)
     .usage("$0 --columns [[column identifiers]] --context [context] --deploy [deployment] --namespace [namespace] --format [json|table] --host [host] --port [port] --protocol [http|https]")
@@ -41,20 +42,33 @@ let cmdLineArgs = yargs
     .option('port', {
         type: "number",
         desc: "The port number to use when connecting",
-        default: 8001,
+      //  default: 8001,
         implies: ["host", "protocol"]
+    })
+    .option('proxy', {
+      description : "use kubectl proxy to connect",
+      //implies: ["host", "port", "protocol"],
+    }).coerce('proxy', (argv)=>{
+
+      opts = _.split(argv ,/[:,/]/g);
+      let proxyOpts = {}
+      _.set(proxyOpts , "protocol", "http")
+      _.set(proxyOpts , "host", opts[0])
+      _.set(proxyOpts , "port", opts[1])
+
+      return proxyOpts;
     })
     .option('host', {
         type: "string",
         desc: "The host name to use when connecting",
-        default : "127.0.0.1",
+        //default : "127.0.0.1",
         implies: ["port", "protocol"]
     })
     .option('protocol', {
         type: "string",
         desc: "The protocol to use for connection",
         choices: ["http", "https"],
-        default : "http",
+        //default : "http",
         implies: ["host", "port"]
     })
     .option('context', {
@@ -64,6 +78,12 @@ let cmdLineArgs = yargs
     })
     .argv;
 
+if (cmdLineArgs.proxy){
+  cmdLineArgs.host = cmdLineArgs.proxy.host;
+  cmdLineArgs.port = ~~(cmdLineArgs.proxy.port);
+  cmdLineArgs.protocol = cmdLineArgs.proxy.protocol;
+}
+console.log(cmdLineArgs);
 const generateDeploymentsReport = function({
     context,
     namespace = "default",
@@ -73,7 +93,7 @@ const generateDeploymentsReport = function({
     port,
     protocol
 }){
-    let client;
+
 
     try {
         client = new Kubemote(_.defaults({ host, port, protocol }, Kubemote.CONFIGURATION_FILE({ namespace, context })));
@@ -179,15 +199,14 @@ const reportFormatters = {
             "available":  { caption: "Available" },
             "age": { caption: "Age", formatter: timeSpanFormatter },
             "images": { caption: "Images(s)", formatter: (containers, imagesList)=>{
-              let table = new Table({ head: ["image", "labels"],
-            colWidths : [10, 50]});
+
                let all = containers.map(({image})=>{
                //let truncatedImage = _.truncate(image, { length: 80 });
                let tags =  _.filter(imagesList, (i)=>{
                  console.log(`${image}-${util.format(i)} , ${i.RepoTags}`);
                   return _(i.RepoTags).some((tag)=> tag === image)
             }).map((i)=>i.Labels);
-               return image + "\nlabels : \n" + _.chain(tags).head().toPairs().value().join('\n');
+               return image + "\nlabels : \n======\n" + _.chain(tags).head().toPairs('=').value().join('\n');
           })
              return all.join('\n');
         }
@@ -202,7 +221,7 @@ const reportFormatters = {
               , colWidths: ((colWidths)=>{
                 _.fill(colWidths, 10);
                  colWidths[colWidths.length - 2] = 60
-
+                 colWidths[colWidths.length - 1] = 20
                  return colWidths;
                })(Array(columns.length))
 
@@ -223,9 +242,9 @@ generateDeploymentsReport(
 
     .then((report)=>{
 
-
-      return listImages({}).scan((prev , next)=>{
+      return listImages({waitPeriod:200000}).scan((prev , next)=>{
         prev.push(next);
+        console.log(`------\n${util.format(next.RepoTags)}\n----`);
         return prev;
       }, []).toPromise().then((images)=>{
           report.imagesList = images;

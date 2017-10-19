@@ -1,7 +1,8 @@
 const
     _ = require('lodash'),
     fs = require('fs'),
-    Kubemote = require('../src/kubemote'),
+    KubemoteWrapper = require('../src/kubemoteWrapper'),
+    Kubemote = require('../src/kubemote')
     kefir = require('kefir'),
     uuid = require('uuid'),
     util = require('util'),
@@ -12,11 +13,10 @@ const
   let allImages = true;
 
 
-module.exports.listImages= ({imageId="all_images", byName=false, imageName})=>{
-
-let
-    remote = new Kubemote(),
-    probeStream = kefir
+module.exports.listImages= ({remote=new Kubemote({host:"127.0.0.1", port:8001, protocol:"http"}), imageId="all_images",
+ byName=false, imageName, waitPeriod=10000})=>{
+  console.log(waitPeriod);
+  probeStream = kefir
         .fromPromise(remote.getNodes())
         .map((podList)=> _(podList["items"]).map('metadata.name').uniq().value())
         .log('nodes=>')
@@ -37,19 +37,22 @@ let
                             kefir.fromPromise(remote.watchJob({ jobName })).flatMap((stopWatch)=>{
                                 let stream = kefir
                                     .fromEvents(remote, 'watch')
-                                    .filter(_.matches({ object: { kind: "Job", metadata: { name: jobName }} })).log('job-watch')
+                                    .filter(_.matches({ object: { kind: "Job", metadata: { name: jobName }} }))
                                     .filter((watchNotification)=> _.get(watchNotification, 'object.status.completionTime'))
                                     .take(1)
                                     .flatMap((watchNotification)=> _.get(watchNotification, 'object.status.succeeded') ?
-                                        kefir.fromPromise(remote.getPods({ "job-name": jobName })).map(_.partial(_.get, _, 'items.0.metadata.name')) :
+                                        kefir.fromPromise(remote.getPods({ "job-name": jobName })).map(_.partial(_.get, _, 'items.0.metadata.name')).log('job->pods') :
                                         kefir.constantError('Failed to complete task'))
-                                    .flatMap((podName)=> kefir.fromPromise(remote.getPodLogs({ podName })))
-                                    .map(_.flow(JSON.parse, (images)=> images.map((image)=> _.assign(image, { _source: nodeName }))));
+                                    .flatMap((podName)=> kefir.fromPromise(remote.getPodLogs({ podName }))).log('pod->logs')
+                                    .map(_.flow((image)=>{
+                                       console.log(`image ${image}`);
+                                       return image;
+                                    },JSON.parse, (images)=> images.map((image)=> _.assign(image, { _source: nodeName }))));
 
                                 stream.onEnd(stopWatch);
                                 return stream;
-                            }).takeUntilBy(kefir.sequentially(10000, [1])),
-                            kefir.later().flatMap(()=> kefir.fromPromise(remote.deleteJob({ jobName }))).ignoreValues()
+                            }).takeUntilBy(kefir.later(waitPeriod, 1)),
+                            kefir.later().flatMap(()=> kefir.fromPromise(remote.deleteJob({ jobName })))   .ignoreValues()
                         ])
                 })
             )
@@ -67,7 +70,7 @@ let
 //TODO : put flags , all
 //
 //probeStream.onValue((images)=> console.log(["The following images are available throughout Kubernetes:", ...images.map(({ Id, Config})=> ` ${Id}- ${util.format(Config.Labels)}`)].join('\n')));
-images = probeStream.flatten().map(imageInfo.Labels).log();
+images = probeStream.flatten().map(imageInfo.Labels)
  //.filter(({Id})=> allImages ||  Id == imageId ).log('');
 /*imageWithLabels = probeStream.flatten().map(imageInfo.Labels)
  .filter(({Id})=> allImages ||  Id == imageId )

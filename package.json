@@ -13,9 +13,12 @@
     "cli-table": "^0.3.1",
     "concat-stream": "^1.6.0",
     "js-yaml": "^3.9.0",
+    "json-stream": "^1.0.0",
     "kefir": "^3.7.3",
+    "kubernetes-client": "^3.16.0",
     "lodash": "^4.17.4",
     "split": "^1.0.0",
+    "superagent": "^3.7.0",
     "uuid": "^3.1.0",
     "yargs": "^9.0.1"
   }
