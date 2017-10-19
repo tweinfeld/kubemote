@@ -97,7 +97,9 @@ const getImageLabels = (function(){
 
     return (client, nodeName, imageName)=> {
 
-        let id = _.sampleSize("abcdefghijklmnopqrstuvwxyz0123456789".split(''), 10).join('');
+        let
+            id = _.range(10).map(_.partial(_.sample, "abcdefghijklmnopqrstuvwxyz0123456789".split(''))).join(''),
+            destructionFunctions = [];
 
         return kefir.concat([
             kefir.fromPromise(client.createJob({
@@ -147,7 +149,7 @@ const getImageLabels = (function(){
                     }
                 }
             })).ignoreValues(),
-            kefir.fromPromise(client.watchJobList({"job-name": id})).ignoreValues(),
+            kefir.fromPromise(client.watchJobList({ "job-name": id })).onValue((func)=> destructionFunctions.push(func)).ignoreValues(),
             kefir
                 .fromEvents(client, 'watch')
                 .filter(_.matches({object: {kind: "Job", metadata: {name: id}}}))
@@ -157,14 +159,17 @@ const getImageLabels = (function(){
                 .take(1)
                 .ignoreValues(),
             kefir.later().flatMap(()=> kefir
-                .fromPromise(client.getPods({"job-name": id}))
+                .fromPromise(client.getPods({ "job-name": id }))
                 .map(_.property('items.0.metadata.name'))
-                .flatMap((podName) => kefir.fromPromise(client.getPodLogs({podName})))
+                .flatMap((podName)=> kefir.fromPromise(client.getPodLogs({podName})))
                 .map(_.flow(JSON.parse, _.property('0.ContainerConfig.Labels')))
             )
         ])
         .takeErrors(1)
-        .onEnd(() => client.deleteJob({"jobName": id}))
+        .onEnd(()=>{
+            destructionFunctions.forEach((func)=> func());
+            client.deleteJob({ "jobName": id });
+        })
         .toPromise();
     };
 })();
@@ -230,15 +235,15 @@ const generateDeploymentsReport = function({
                 ], (v, f) => f(v));
 
                 return Object.assign({
-                    name,
-                    desired: replicas,
-                    current: updatedReplicas,
-                    available: replicas - unavailableReplicas,
-                    age: Date.now() - creationTimestamp,
-                    selectors: labels
-                },
-                includeImages && { images: _.pick(images, _(podDocs).map('spec.containers').flatten().map('image').value()) },
-                includePods && { pods: _(podDocs).map('metadata.name').value() }
+                        name,
+                        desired: replicas,
+                        current: updatedReplicas,
+                        available: replicas - unavailableReplicas,
+                        age: Date.now() - creationTimestamp,
+                        selectors: labels
+                    },
+                    includeImages && { images: _.pick(images, _(podDocs).map('spec.containers').flatten().map('image').value()) },
+                    includePods && { pods: _(podDocs).map('metadata.name').value() }
                 );
             })
         )
