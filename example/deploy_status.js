@@ -99,7 +99,7 @@ const getImageLabels = (function(){
 
         let
             id = _.range(10).map(_.partial(_.sample, "abcdefghijklmnopqrstuvwxyz0123456789".split(''))).join(''),
-            destructionFunctions = [];
+            destructionFunction = _.noop;
 
         return kefir.concat([
             kefir.fromPromise(client.createJob({
@@ -149,7 +149,7 @@ const getImageLabels = (function(){
                     }
                 }
             })).ignoreValues(),
-            kefir.fromPromise(client.watchJobList({ "job-name": id })).onValue((func)=> destructionFunctions.push(func)).ignoreValues(),
+            kefir.fromPromise(client.watchJobList({ "job-name": id })).onValue((func)=> destructionFunction = func).ignoreValues(),
             kefir
                 .fromEvents(client, 'watch')
                 .filter(_.matches({object: {kind: "Job", metadata: {name: id}}}))
@@ -167,7 +167,7 @@ const getImageLabels = (function(){
         ])
         .takeErrors(1)
         .onEnd(()=>{
-            destructionFunctions.forEach((func)=> func());
+            destructionFunction();
             client.deleteJob({ "jobName": id });
         })
         .toPromise();
@@ -242,7 +242,7 @@ const generateDeploymentsReport = function({
                         age: Date.now() - creationTimestamp,
                         selectors: labels
                     },
-                    includeImages && { images: _.pick(images, _(podDocs).map('spec.containers').flatten().map('image').value()) },
+                    includeImages && { images: ((activeImages)=> _.defaults(_.pick(images, activeImages), activeImages.map((imageName)=>({ [imageName]: {} })).reduce(_.ary(_.assign, [0,1]))))(_(podDocs).map('spec.containers').flatten().map('image').value()) },
                     includePods && { pods: _(podDocs).map('metadata.name').value() }
                 );
             })
