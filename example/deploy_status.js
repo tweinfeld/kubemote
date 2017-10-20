@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 const
     _ = require('lodash'),
     yargs = require('yargs'),
@@ -23,13 +24,33 @@ let cmdLineArgs = yargs
         alias: "ns"
     })
     .group(["columns", "format"], 'Report Composition:')
-    .option('columns', {
-        alias: "col",
+    .option('col', {
+      //  alias: "col",
         type: "array",
         default: ["name", "desired", "current", "available", "age", "images", "pods"],
         description: "Columns to include in the report",
-        choices: ["name", "desired", "current", "available", "age", "images", "pods", "selectors"],
-        demandOption: "Please provide a list of required columns"
+        demandOption: "Please provide a list of required columns",
+        coerce: (args)=>{
+          const choices =
+          {"name": 10,
+          "desired" : 5,
+          "current" : 5,
+          "available" : 5,
+          "age" : 10,
+          "images" : 40,
+          "pods" : 10,
+          "selectors":10};
+          const colWidth  = [];
+          _.fill(colWidth, choices.length, 10 )
+;          console.log('args=' + args);
+          let options = _(args).map((arg)=>{
+            let opts = arg.split(/[,=]/)
+            _.set(choices, opts[0], ~~opts[1], 10);
+            return arg;
+      }).value();
+          console.log(choices);
+          return choices;
+        }
     })
     .option('format', {
         description: "Report type",
@@ -83,7 +104,8 @@ if (cmdLineArgs.proxy){
   cmdLineArgs.port = ~~(cmdLineArgs.proxy.port);
   cmdLineArgs.protocol = cmdLineArgs.proxy.protocol;
 }
-console.log(cmdLineArgs);
+
+
 const generateDeploymentsReport = function({
     context,
     namespace = "default",
@@ -167,7 +189,7 @@ const listImages = require('./probe_images').listImages;
 const reportFormatters = {
     "json": (columns, rawReport)=> rawReport.map((row)=> _.pick(row, columns)),
     "table": (function(){
-            const timeSpanFormatter = (function(){
+        const timeSpanFormatter = (function(){
                 const
                     MIL_IN_SEC = 1000,
                     MIL_IN_MIN = 60 * MIL_IN_SEC,
@@ -216,17 +238,21 @@ const reportFormatters = {
         };
 
         return function(columns, rawReport){
+          console.log(`cols : ${util.format(columns)}`)
             let table = new Table(
-              { head: columns.map((columnName)=> columnsFormats[columnName]["caption"])
-              , colWidths: ((colWidths)=>{
-                _.fill(colWidths, 10);
-                 colWidths[colWidths.length - 2] = 60
-                 colWidths[colWidths.length - 1] = 20
-                 return colWidths;
-               })(Array(columns.length))
+              { head: _.map(columns , (width , col)=> {
+                console.log(col);
+                return columnsFormats[col]["caption"]
+
+              })
+
+              , colWidths: _.values(columns)
 
           });
-            rawReport.forEach((row)=> table.push(columns.map((columnName)=> (columnsFormats[columnName].formatter || _.identity)(row[columnName], rawReport.imagesList))));
+            rawReport.forEach((row)=> table.push(_.map(columns,
+              (width, columnName)=>
+              (columnsFormats[columnName].formatter || _.identity)(row[columnName],
+                 rawReport.imagesList)))) ;
             return table.toString();
         };
     })()
@@ -236,7 +262,7 @@ const reportFormatters = {
 generateDeploymentsReport(
     Object.assign(
         _.pick(cmdLineArgs, ["namespace", "deployment", "context"]),
-        { extended: cmdLineArgs["col"].some((selectedColumn)=> ["pods", "images"].includes(selectedColumn)) },
+        { extended: _(cmdLineArgs["col"]).keys().some((selectedColumn)=> ["pods", "images"].includes(selectedColumn))},
         _.at(cmdLineArgs, ["port", "host", "protocol"]).some(Boolean) && _.pick(cmdLineArgs, ["port", "host", "protocol"])
     ))
 
@@ -252,6 +278,6 @@ generateDeploymentsReport(
       })
 
     })
-    .then(_.partial(reportFormatters[cmdLineArgs["format"]], _.uniq(["name", ...cmdLineArgs["col"]])))
+    .then(_.partial(reportFormatters[cmdLineArgs["format"]], cmdLineArgs["col"] || {name:10}))
     .then(console.log)
     .catch(console.warn);
