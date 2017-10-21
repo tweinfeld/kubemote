@@ -9,6 +9,9 @@
   },
   "author": "Tal Weinfeld",
   "license": "ISC",
+   "bin": {
+     "kubeNode": "./examples/deploy_status.js"
+  },
   "dependencies": {
     "cli-table": "^0.3.1",
     "concat-stream": "^1.6.0",
