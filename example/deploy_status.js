@@ -27,10 +27,19 @@ let cmdLineArgs = yargs
     .option('col', {
       //  alias: "col",
         type: "array",
-        default: ["name", "desired", "current", "available", "age", "images", "pods"],
+        default:  {default:  {"name": 10,
+          "desired" : 5,
+          "current" : 5,
+          //"available" : 5,
+          //"age" : 10,
+          "images" : 40,
+          "pods" : 10,
+          "selectors":10}
+        },
         description: "Columns to include in the report",
         demandOption: "Please provide a list of required columns",
         coerce: (args)=>{
+
           const choices =
           {"name": 10,
           "desired" : 5,
@@ -40,16 +49,24 @@ let cmdLineArgs = yargs
           "images" : 40,
           "pods" : 10,
           "selectors":10};
+
+           if (_.get(args[0], "default"))
+              return    args[0].default;
+
+
+          if (!args)
+          return choices;
           const colWidth  = [];
           _.fill(colWidth, choices.length, 10 )
-;          console.log('args=' + args);
+;
+          let shownCols = {};
           let options = _(args).map((arg)=>{
             let opts = arg.split(/[,=]/)
-            _.set(choices, opts[0], ~~opts[1], 10);
+            _.set(shownCols, opts[0], ~~opts[1], 10);
             return arg;
-      }).value();
-          console.log(choices);
-          return choices;
+          }).value();
+
+          return shownCols;
         }
     })
     .option('format', {
@@ -225,7 +242,7 @@ const reportFormatters = {
                let all = containers.map(({image})=>{
                //let truncatedImage = _.truncate(image, { length: 80 });
                let tags =  _.filter(imagesList, (i)=>{
-                 console.log(`${image}-${util.format(i)} , ${i.RepoTags}`);
+                   //console.log(`${image}-${util.format(i)} , ${i.RepoTags}`);
                   return _(i.RepoTags).some((tag)=> tag === image)
             }).map((i)=>i.Labels);
                return image + "\nlabels : \n======\n" + _.chain(tags).head().toPairs('=').value().join('\n');
@@ -238,10 +255,10 @@ const reportFormatters = {
         };
 
         return function(columns, rawReport){
-          console.log(`cols : ${util.format(columns)}`)
+
             let table = new Table(
               { head: _.map(columns , (width , col)=> {
-                console.log(col);
+
                 return columnsFormats[col]["caption"]
 
               })
@@ -270,7 +287,6 @@ generateDeploymentsReport(
 
       return listImages({waitPeriod:200000}).scan((prev , next)=>{
         prev.push(next);
-        console.log(`------\n${util.format(next.RepoTags)}\n----`);
         return prev;
       }, []).toPromise().then((images)=>{
           report.imagesList = images;

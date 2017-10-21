@@ -15,11 +15,10 @@ const
 
 module.exports.listImages= ({remote=new Kubemote({host:"127.0.0.1", port:8001, protocol:"http"}), imageId="all_images",
  byName=false, imageName, waitPeriod=10000})=>{
-  console.log(waitPeriod);
+
   probeStream = kefir
         .fromPromise(remote.getNodes())
         .map((podList)=> _(podList["items"]).map('metadata.name').uniq().value())
-        .log('nodes=>')
         .flatMap((nodeNameList)=> {
             return kefir.combine(
                 nodeNameList.map((nodeName)=> {
@@ -30,7 +29,7 @@ module.exports.listImages= ({remote=new Kubemote({host:"127.0.0.1", port:8001, p
                     _.set(jobTemplate, "spec.template.spec.nodeName", nodeName);
                     _.set(jobTemplate, "spec.template.spec.containers[0].args[1]", "docker inspect $(docker images -aq --no-trunc)");
 
-                    console.log(jobTemplate);
+
                     return kefir
                         .concat([
                             kefir.fromPromise(remote.createJob(jobTemplate)).ignoreValues(),
@@ -41,12 +40,11 @@ module.exports.listImages= ({remote=new Kubemote({host:"127.0.0.1", port:8001, p
                                     .filter((watchNotification)=> _.get(watchNotification, 'object.status.completionTime'))
                                     .take(1)
                                     .flatMap((watchNotification)=> _.get(watchNotification, 'object.status.succeeded') ?
-                                        kefir.fromPromise(remote.getPods({ "job-name": jobName })).map(_.partial(_.get, _, 'items.0.metadata.name')).log('job->pods') :
+                                        kefir.fromPromise(remote.getPods({ "job-name": jobName })).map(_.partial(_.get, _, 'items.0.metadata.name')) :
                                         kefir.constantError('Failed to complete task'))
-                                    .flatMap((podName)=> kefir.fromPromise(remote.getPodLogs({ podName }))).log('pod->logs')
+                                    .flatMap((podName)=> kefir.fromPromise(remote.getPodLogs({ podName })))
                                     .map(_.flow((image)=>{
-                                       console.log(`image ${image}`);
-                                       return image;
+                                      return image;
                                     },JSON.parse, (images)=> images.map((image)=> _.assign(image, { _source: nodeName }))));
 
                                 stream.onEnd(stopWatch);
