@@ -104,10 +104,10 @@ module.exports = class Kubemote extends EventEmitter {
             qs = {},
             headers = {}
         }){
-            return client.request(_.merge(baseConfig, {
+            return client.request(_.merge({}, baseConfig, {
                 headers,
                 method,
-                path: _.compact([_.template(path)({ namespace }), querystring.stringify(qs)]).join('?') //"http://127.0.0.1:8001" +
+                path: _.compact([_.template(path)({ namespace }), querystring.stringify(qs)]).join('?')
             }));
         };
     }
