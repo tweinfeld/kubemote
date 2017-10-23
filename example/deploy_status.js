@@ -29,7 +29,8 @@ let cmdLineArgs = yargs
         default: ["name", "desired", "current", "available", "age", "images", "pods"],
         description: "Columns to include in the report",
         choices: ["name", "desired", "current", "available", "age", "images", "pods", "selectors"],
-        demandOption: "Please provide a list of required columns"
+        demandOption: "Please provide a list of required columns",
+        coerce: (args)=> _.uniq(["name", ...args])
     })
     .option('format', {
         description: "Report type",
@@ -37,6 +38,31 @@ let cmdLineArgs = yargs
         default: "table",
         type: "array",
         coerce: _.last
+    })
+    .option('columnWidths', {
+        alias: "colWidth",
+        type: "array",
+        description: "Define columns width",
+        default: [],
+        coerce: (args = []) => {
+            return _(args)
+                .chain()
+                .reduce((ac, arg)=> {
+                    let [, name, value] = arg.match(/^([^=]+)=([^=]+)$/) || [];
+                    return _.assign(ac, name && { [name]: _.toInteger(value) });
+                }, {})
+                .defaults({
+                    "name": 10,
+                    "desired": 5,
+                    "current": 5,
+                    "available" : 5,
+                    "age" : 17,
+                    "images": 40,
+                    "pods": 10,
+                    "selectors": 10
+                })
+                .value();
+        }
     })
     .group(["port", "host", "protocol", "context", "url"], 'Connection:')
     .option('port', {
@@ -257,33 +283,33 @@ const generateDeploymentsReport = function({
         .toPromise();
 };
 
-const reportFormatters = {
-    "json": (columns, rawReport)=> util.inspect(rawReport.map((row)=> _.pick(row, columns)), { depth: 10 }),
-    "table": (function(){
-            const timeSpanFormatter = (function(){
-                const
-                    MIL_IN_SEC = 1000,
-                    MIL_IN_MIN = 60 * MIL_IN_SEC,
-                    MIL_IN_HOUR = 60 * MIL_IN_MIN,
-                    MIL_IN_DAY = 24 * MIL_IN_HOUR,
-                    factors = [MIL_IN_DAY, MIL_IN_HOUR, MIL_IN_MIN, MIL_IN_SEC],
-                    captions = ["s", "m", "h", "d"];
+const
+    jsonFormatter = _.curry((columns, rawReport)=> util.inspect(rawReport.map((row)=> _.pick(row, columns)), { depth: 10 }), 2),
+    tableFormatter = (function(){
+        const timeSpanFormatter = (function(){
+            const
+                MIL_IN_SEC = 1000,
+                MIL_IN_MIN = 60 * MIL_IN_SEC,
+                MIL_IN_HOUR = 60 * MIL_IN_MIN,
+                MIL_IN_DAY = 24 * MIL_IN_HOUR,
+                factors = [MIL_IN_DAY, MIL_IN_HOUR, MIL_IN_MIN, MIL_IN_SEC],
+                captions = ["s", "m", "h", "d"];
 
-                return (span)=>
-                    _(factors)
-                        .map((function(ac){
-                            return (factor)=> {
-                                let sectionValue = ~~(ac / factor);
-                                ac = ac % factor;
-                                return sectionValue;
-                            }
-                        })(span))
-                        .dropWhile(_.negate(Boolean))
-                        .reverse()
-                        .map((v, index)=> [_.padStart(v, 2, '0'), captions[index]].join(''))
-                        .reverse()
-                        .join(':');
-            })();
+            return (span)=>
+                _(factors)
+                    .map((function(ac){
+                        return (factor)=> {
+                            let sectionValue = ~~(ac / factor);
+                            ac = ac % factor;
+                            return sectionValue;
+                        }
+                    })(span))
+                    .dropWhile(_.negate(Boolean))
+                    .reverse()
+                    .map((v, index)=> [_.padStart(v, 2, '0'), captions[index]].join(''))
+                    .reverse()
+                    .join(':');
+        })();
 
         const columnsFormats = {
             "name": { caption: "Name" },
@@ -296,13 +322,15 @@ const reportFormatters = {
             "selectors": { caption: "Selectors", formatter: (labels)=> _.truncate(_.map(labels, (v, k) => `${k}=${v}`).join('\n'), { length: 100 }) }
         };
 
-        return function(columns, rawReport){
-            let table = new Table({ head: columns.map((columnName)=> columnsFormats[columnName]["caption"]) });
+        return _.curry(function(columns, columnWidths, rawReport){
+            let table = new Table({
+                head: columns.map((columnName)=> columnsFormats[columnName]["caption"]),
+                colWidths: columns.map((name)=>columnWidths[name])
+            });
             rawReport.forEach((row)=> table.push(columns.map((columnName)=> (columnsFormats[columnName].formatter || _.identity)(row[columnName]))));
             return table.toString();
-        };
-    })()
-};
+        }, 3);
+    })();
 
 generateDeploymentsReport(
     Object.assign(
@@ -319,6 +347,9 @@ generateDeploymentsReport(
         })(cmdLineArgs),
         _.at(cmdLineArgs, ["port", "host", "protocol"]).some(Boolean) && _.pick(cmdLineArgs, ["port", "host", "protocol"])
     ))
-    .then(_.partial(reportFormatters[cmdLineArgs["format"]], _.uniq(["name", ...cmdLineArgs["col"]])))
+    .then({
+        "json": jsonFormatter(cmdLineArgs["col"]),
+        "table": tableFormatter(cmdLineArgs["col"], cmdLineArgs["colWidth"])
+    }[cmdLineArgs["format"]])
     .then(console.log)
     .catch(console.warn);
