@@ -104,10 +104,10 @@ module.exports = class Kubemote extends EventEmitter {
             qs = {},
             headers = {}
         }){
-            return client.request(_.merge(baseConfig, {
+            return client.request(_.merge({}, baseConfig, {
                 headers,
                 method,
-                path: _.compact([_.template(path)({ namespace }), querystring.stringify(qs)]).join('?') //"http://127.0.0.1:8001" +
+                path: _.compact([_.template(path)({ namespace }), querystring.stringify(qs)]).join('?')
             }));
         };
     }
@@ -206,7 +206,7 @@ module.exports = class Kubemote extends EventEmitter {
     }
 
     getPodLogs({ podName }){
-     
+
         const request = this[REQUEST]({
             path: `/api/v1/namespaces/$\{namespace\}/pods/${podName}/log`
         });
@@ -271,8 +271,8 @@ module.exports = class Kubemote extends EventEmitter {
     watchJob({ jobName, selector }){
         return Promise.resolve(createRequestSendWatchEvents.call(this, {
             method: "GET",
-            path: "/apis/batch/v1/watch/namespaces/${namespace}/jobs/" + `${jobName}`,
-            qs: { includeUninitialized: true, watch: true, labelSelector: serializeSelectorQuery(selector) }
+            path: `/apis/batch/v1/watch/namespaces/$\{namespace\}/jobs/${jobName}`,
+            qs: { watch: true }
         }));
     }
 

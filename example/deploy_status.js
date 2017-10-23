@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 const
     _ = require('lodash'),
+    util = require('util'),
     yargs = require('yargs'),
     kefir = require('kefir'),
     Table = require('cli-table'),
-    util  = require('util'),
     Kubemote = require('../src/kubemote');
 
 let client,cmdLineArgs;
@@ -75,7 +75,7 @@ cmdLineArgs = yargs
           });
           let options = _(args).map((arg)=>{
             let opts = arg.split(/[,=]/)
-            _.set(shownCols, opts[0], ~~opts[1], 10);
+            _.set(shownCols, opts[0], !!(~~opts[1])? ~~opts[1] : 10 , 10);
             return arg;
           }).value();
 
@@ -93,7 +93,6 @@ cmdLineArgs = yargs
     .option('port', {
         type: "number",
         desc: "The port number to use when connecting",
-      //  default: 8001,
         implies: ["host", "protocol"]
     })
     .option('proxy', {
@@ -112,14 +111,12 @@ cmdLineArgs = yargs
     .option('host', {
         type: "string",
         desc: "The host name to use when connecting",
-        //default : "127.0.0.1",
         implies: ["port", "protocol"]
     })
     .option('protocol', {
         type: "string",
         desc: "The protocol to use for connection",
         choices: ["http", "https"],
-        //default : "http",
         implies: ["host", "port"]
     })
     .option('context', {
@@ -155,7 +152,7 @@ const generateDeploymentsReport = function({
     } catch(error){
         return Promise.reject(error);
     }
-
+    console.log('collecting data from K8s cluster');
     return kefir
         .fromPromise(client.getDeployments())
         .flatMap((res)=> {
@@ -220,7 +217,7 @@ const generateDeploymentsReport = function({
 };
 const listImages = require('./probe_images').listImages;
 const reportFormatters = {
-    "json": (columns, rawReport)=> rawReport.map((row)=> _.pick(row, columns)),
+    "json": (columns, rawReport)=> util.inspect(rawReport.map((row)=> _.pick(row, columns)), { depth: 10 }),
     "table": (function(){
         const timeSpanFormatter = (function(){
                 const
@@ -298,8 +295,10 @@ generateDeploymentsReport(
     ))
 
     .then((report)=>{
+       console.log('adding image metadata ...');
+      if (!cmdLineArgs["col"].images) return report;
 
-      return listImages({waitPeriod:200000}).scan((prev , next)=>{
+      listImages({waitPeriod:200000}).scan((prev , next)=>{
         prev.push(next);
         return prev;
       }, []).toPromise().then((images)=>{
