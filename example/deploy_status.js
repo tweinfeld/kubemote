@@ -1,5 +1,6 @@
 const
     _ = require('lodash'),
+    url = require('url'),
     util = require('util'),
     yargs = require('yargs'),
     kefir = require('kefir'),
@@ -37,15 +38,15 @@ let cmdLineArgs = yargs
         type: "array",
         coerce: _.last
     })
-    .group(["port", "host", "protocol", "context"], 'Connection:')
+    .group(["port", "host", "protocol", "context", "url"], 'Connection:')
     .option('port', {
         type: "number",
-        desc: "The port number to use when connecting",
+        description: "The port number to use when connecting",
         implies: ["host", "protocol"]
     })
     .option('host', {
         type: "string",
-        desc: "The host name to use when connecting",
+        description: "The host name to use when connecting",
         implies: ["port", "protocol"]
     })
     .option('protocol', {
@@ -53,6 +54,10 @@ let cmdLineArgs = yargs
         desc: "The protocol to use for connection",
         choices: ["http", "https"],
         implies: ["host", "port"]
+    })
+    .option('url', {
+        description: "A URL to connect to (e.g. url=http://localhost:8001 for local proxy)",
+        type: "string"
     })
     .option('context', {
         type: "string",
@@ -304,6 +309,14 @@ generateDeploymentsReport(
         _.pick(cmdLineArgs, ["namespace", "deployment", "context"]),
         { includePods: cmdLineArgs["col"].some((selectedColumn)=> ["pods"].includes(selectedColumn)) },
         { includeImages: cmdLineArgs["col"].some((selectedColumn)=> ["images"].includes(selectedColumn)) },
+        (({ url: cmdUrl = '' })=> {
+            let { protocol, hostname, port } = url.parse(cmdUrl);
+            return {
+                protocol: _.first((protocol || '').match(/^https?/)),
+                host: hostname || undefined,
+                port: (port && +port) || undefined
+            };
+        })(cmdLineArgs),
         _.at(cmdLineArgs, ["port", "host", "protocol"]).some(Boolean) && _.pick(cmdLineArgs, ["port", "host", "protocol"])
     ))
     .then(_.partial(reportFormatters[cmdLineArgs["format"]], _.uniq(["name", ...cmdLineArgs["col"]])))
