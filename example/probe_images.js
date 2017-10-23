@@ -6,10 +6,11 @@ const
     kefir = require('kefir'),
     uuid = require('uuid'),
     util = require('util'),
-    imageInfo = require('./imageInfo');
-    yaml = require('js-yaml');
+    imageInfo = require('./imageInfo'),
+    yaml = require('js-yaml')
+    path = require('path');
 
-  let jobTemplate = yaml.safeLoad(fs.readFileSync('./templates/jobs.yaml', "utf-8"));
+  let jobTemplate = yaml.safeLoad(fs.readFileSync(path.resolve(__dirname, './templates/jobs.yaml'), "utf-8"));
   let allImages = true;
 
 

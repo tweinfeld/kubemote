@@ -7,8 +7,8 @@ const
     util  = require('util'),
     Kubemote = require('../src/kubemote');
 
-let client;
-let cmdLineArgs = yargs
+let client,cmdLineArgs;
+cmdLineArgs = yargs
     .version(false)
     .usage("$0 --columns [[column identifiers]] --context [context] --deploy [deployment] --namespace [namespace] --format [json|table] --host [host] --port [port] --protocol [http|https]")
     .group(["deployment", "namespace"], 'Query Options:')
@@ -24,14 +24,24 @@ let cmdLineArgs = yargs
         alias: "ns"
     })
     .group(["columns", "format"], 'Report Composition:')
+    .option('colSize',
+    //  alias: "col",
+    { type: "array",
+      description: "define columns size",
+      coerce: (args)=>{
+        let options = _(args).map((arg)=>{
+          let opts = arg.split(/[,=]/)
+          return [opts[0], ~~opts[1]];
+        }).value();
+        return options;
+      }
+    })
     .option('col', {
-      //  alias: "col",
+
         type: "array",
         default:  {default:  {"name": 10,
           "desired" : 5,
           "current" : 5,
-          //"available" : 5,
-          //"age" : 10,
           "images" : 40,
           "pods" : 10,
           "selectors":10}
@@ -60,6 +70,9 @@ let cmdLineArgs = yargs
           _.fill(colWidth, choices.length, 10 )
 ;
           let shownCols = {};
+          _.remove(args, (m)=>{
+                return m.match(/^[,=?]$/g);
+          });
           let options = _(args).map((arg)=>{
             let opts = arg.split(/[,=]/)
             _.set(shownCols, opts[0], ~~opts[1], 10);
@@ -122,7 +135,9 @@ if (cmdLineArgs.proxy){
   cmdLineArgs.protocol = cmdLineArgs.proxy.protocol;
 }
 
-
+cmdLineArgs.colSize.forEach((o)=>{
+  _.set(cmdLineArgs.col, o[0], o[1]);
+})
 const generateDeploymentsReport = function({
     context,
     namespace = "default",
@@ -136,6 +151,7 @@ const generateDeploymentsReport = function({
 
     try {
         client = new Kubemote(_.defaults({ host, port, protocol }, Kubemote.CONFIGURATION_FILE({ namespace, context })));
+        client.setMaxListeners(1000);
     } catch(error){
         return Promise.reject(error);
     }
@@ -258,10 +274,8 @@ const reportFormatters = {
 
             let table = new Table(
               { head: _.map(columns , (width , col)=> {
-
-                return columnsFormats[col]["caption"]
-
-              })
+                  return columnsFormats[col]["caption"]
+                })
 
               , colWidths: _.values(columns)
 
