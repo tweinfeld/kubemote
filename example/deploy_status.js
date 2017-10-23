@@ -22,7 +22,7 @@ let cmdLineArgs = yargs
         default:  "default",
         alias: "ns"
     })
-    .group(["columns", "format"], 'Report Composition:')
+    .group(["columns", "format", "columnWidths"], 'Report Composition:')
     .option('columns', {
         alias: "col",
         type: "array",
