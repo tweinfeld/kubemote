@@ -24,4 +24,20 @@ let id= setInterval(()=>{
 // stop the progress bar
 
   })
+
+it.only('other progress', (done)=>{
+  var ProgressBar = require('progress');
+
+  var bar = new ProgressBar(':bar', { total: 10 });
+  var timer = setInterval(()=> {
+    bar.tick({token1:'hello'});
+    console.log('aaa');
+    if (bar.complete) {
+      console.log('\ncomplete\n');
+      clearInterval(timer);
+    }
+  }, 100);
+})
+
+
 })

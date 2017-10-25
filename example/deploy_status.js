@@ -7,6 +7,8 @@ const
     Table = require('cli-table'),
     Kubemote = require('../src/kubemote');
 
+
+
 let client,cmdLineArgs;
 cmdLineArgs = yargs
     .version(false)
@@ -36,6 +38,7 @@ cmdLineArgs = yargs
         return options;
       }
     })
+
     .option('col', {
 
         type: "array",
@@ -284,7 +287,12 @@ const reportFormatters = {
                    //console.log(`${image}-${util.format(i)} , ${i.RepoTags}`);
                   return _(i.RepoTags).some((tag)=> tag === image)
             }).map((i)=>i.Labels);
-               return image + "\nlabels : \n======\n" + _.chain(tags).head().toPairs('=').value().join('\n');
+
+            return image + "\nlabels : \n======\n" + _.chain(tags)
+            .head()
+            .map((v, k)=>{
+              return `${k}=${v}`
+            }).join('\n')
           })
              return all.join('\n');
         }
@@ -321,7 +329,7 @@ generateDeploymentsReport(
     ))
 
     .then((report)=>{
-       console.log(' adding image metadata ...');
+       console.log(' collecting image metadata ...');
       if (!cmdLineArgs["col"].images) return report;
 
       return listImages({waitPeriod:200000}).scan((prev , next)=>{
@@ -337,8 +345,8 @@ generateDeploymentsReport(
     .then((report)=>{
       progressBar.update(100);
       progressBar.finishInterval = true;
-      console.log(' Report is ready!');
       progressBar.stop();
+      console.log(' Report is ready!');
       return report;
     })
     .then(console.log)
