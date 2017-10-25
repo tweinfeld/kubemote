@@ -132,9 +132,30 @@ if (cmdLineArgs.proxy){
   cmdLineArgs.protocol = cmdLineArgs.proxy.protocol;
 }
 
-cmdLineArgs.colSize.forEach((o)=>{
+_(cmdLineArgs).get("colSize", []).forEach((o)=>{
   _.set(cmdLineArgs.col, o[0], o[1]);
 })
+const progressBar = ((units)=>{
+  const  Progress = require('cli-progress');
+  var progressBar = new Progress.Bar({
+    format: '[{bar}] {percentage}%'
+});
+progressBar.start(100, 0);
+progressBar.finishInterval = false;
+return progressBar;
+})(100)
+let progressCounter = 0;
+let progresStream = kefir.withInterval(100, emitter => {
+
+  if(progressBar.finishInterval) return emitter.end();
+  progressBar.update(progressCounter)
+  progressCounter++;
+  emitter.emit(progressCounter);
+
+});
+progresStream.onEnd(_.noop);
+
+
 const generateDeploymentsReport = function({
     context,
     namespace = "default",
@@ -152,8 +173,8 @@ const generateDeploymentsReport = function({
     } catch(error){
         return Promise.reject(error);
     }
-    console.log('collecting data from K8s cluster');
-    return kefir
+    console.log(' collecting data from K8s cluster');
+    let getDeployStream =  kefir
         .fromPromise(client.getDeployments())
         .flatMap((res)=> {
             return kefir.combine(
@@ -176,8 +197,9 @@ const generateDeploymentsReport = function({
                     })
             );
         })
-        .map((report)=>
-            report.map((item)=> {
+        .map((report)=>{
+
+            return report.map((item)=> {
                 let [name, replicas, updatedReplicas, unavailableReplicas, creationTimestamp, containers, podNames, labels] = _.zipWith(_.at(item, [
                     "deploy.metadata.name",
                     "deploy.status.replicas",
@@ -210,10 +232,14 @@ const generateDeploymentsReport = function({
                     pods: podNames
                 });
             })
-        )
-        .mapErrors(({ message = "Unspecified" } = {}) => message)
-        .takeErrors(1)
-        .toPromise();
+        })
+        .mapErrors((e) => _.identity(e))
+        .takeErrors(1);
+
+      getDeployStream.onEnd(_.noop);
+
+
+        return getDeployStream.toPromise();
 };
 const listImages = require('./probe_images').listImages;
 const reportFormatters = {
@@ -295,10 +321,10 @@ generateDeploymentsReport(
     ))
 
     .then((report)=>{
-       console.log('adding image metadata ...');
+       console.log(' adding image metadata ...');
       if (!cmdLineArgs["col"].images) return report;
 
-      listImages({waitPeriod:200000}).scan((prev , next)=>{
+      return listImages({waitPeriod:200000}).scan((prev , next)=>{
         prev.push(next);
         return prev;
       }, []).toPromise().then((images)=>{
@@ -308,5 +334,12 @@ generateDeploymentsReport(
 
     })
     .then(_.partial(reportFormatters[cmdLineArgs["format"]], cmdLineArgs["col"] || {name:10}))
+    .then((report)=>{
+      progressBar.update(100);
+      progressBar.finishInterval = true;
+      console.log(' Report is ready!');
+      progressBar.stop();
+      return report;
+    })
     .then(console.log)
     .catch(console.warn);
