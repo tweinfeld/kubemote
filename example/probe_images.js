@@ -6,7 +6,6 @@ const
     kefir = require('kefir'),
     uuid = require('uuid'),
     util = require('util'),
-    imageInfo = require('./imageInfo'),
     yaml = require('js-yaml')
     path = require('path');
 
@@ -69,7 +68,11 @@ module.exports.listImages= ({remote=new Kubemote({host:"127.0.0.1", port:8001, p
 //TODO : put flags , all
 //
 //probeStream.onValue((images)=> console.log(["The following images are available throughout Kubernetes:", ...images.map(({ Id, Config})=> ` ${Id}- ${util.format(Config.Labels)}`)].join('\n')));
-images = probeStream.flatten().map(imageInfo.Labels)
+images = probeStream.flatten().map(({Id, RepoTags, Config}, filter)=>{
+  return {Id,
+      RepoTags,
+      Labels: Config.Labels}
+});
  //.filter(({Id})=> allImages ||  Id == imageId ).log('');
 /*imageWithLabels = probeStream.flatten().map(imageInfo.Labels)
  .filter(({Id})=> allImages ||  Id == imageId )

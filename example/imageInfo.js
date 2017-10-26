@@ -1,6 +1,6 @@
 const _ = require('lodash');
 module.exports.Config= (images)=>{
-  return _(images).map(({ Id, Config})=>{
+  return _(images).pickBy(({ Id, Config})=>{
     return {Id, Config}
   }).value();
 }
