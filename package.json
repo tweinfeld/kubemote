@@ -10,7 +10,7 @@
   "author": "Tal Weinfeld",
   "license": "ISC",
   "bin": {
-    "kubeNode": "./examples/deploy_status.js"
+    "kubeNode": "./example/deploy_status.js"
   },
   "dependencies": {
     "cli-progress": "^1.6.0",
