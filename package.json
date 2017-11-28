@@ -1,6 +1,6 @@
 {
   "name": "kubemote",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Kubernetes API Client for node.js",
   "main": "src/kubemote",
   "scripts": {
