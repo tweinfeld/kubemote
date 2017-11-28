@@ -11,6 +11,7 @@ const
     splitStream = require('split'),
     querystring = require('querystring'),
     yaml = require('js-yaml'),
+    { execSync } = require('child_process'),
     EventEmitter = require('events').EventEmitter;
 
 const
@@ -128,7 +129,8 @@ module.exports = class Kubemote extends EventEmitter {
             { keys: ["cluster.server"], format: _.flow(_.first, url.parse, ({ host, port, protocol })=> ({ protocol: _.first(protocol.match(/^https?/)), host: _.first(host.match(/[^:]+/)), port: (port || (protocol === "https:" ? 443 : 80)) })) },
             { keys: ["user.username", "user.password"], format: ([username, password])=>({ username, password }) },
             { keys: ["cluster.insecure-skip-tls-verify"], format: ([value])=> ({ insecure_tls: value }) },
-            { keys: ["user.auth-provider.config.access-token"], format: ([token])=> ({ token }) }
+            { keys: ["user.auth-provider.config.access-token"], format: ([token])=> ({ token }) },
+            { keys: ["user.auth-provider.config.cmd-path", "user.auth-provider.config.cmd-args"], format: _.flow(_.partial(_.zipWith, _, [(str)=>`"${str}"`, _.identity], (v, f)=> f(v)), _.partial(_.join, _, ' '), _.partial(execSync, _, { encoding: "utf8" }), JSON.parse, _.partial(_.get, _, 'credential.access_token'), (token)=>({ token })) }
         ];
 
         let
