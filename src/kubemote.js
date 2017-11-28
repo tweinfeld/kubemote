@@ -81,6 +81,7 @@ module.exports = class Kubemote extends EventEmitter {
         client_certificate,
         username,
         password,
+        token,
         insecure_tls = false,
         namespace = "default"
     } = Kubemote.CONFIGURATION_FILE()){
@@ -95,7 +96,8 @@ module.exports = class Kubemote extends EventEmitter {
                 insecure_tls && { rejectUnauthorized: !insecure_tls },
                 certificate_authority && { ca: certificate_authority },
                 client_key && { key: client_key },
-                client_certificate && { cert: client_certificate }
+                client_certificate && { cert: client_certificate },
+                token && { headers: { "Authorization": ["Bearer", token].join(' ') } }
             );
 
         this[REQUEST] = function({
@@ -125,7 +127,8 @@ module.exports = class Kubemote extends EventEmitter {
             { keys: ["user.client-key"], format: _.flow(([filename])=> fs.readFileSync(filename), (buffer)=> ({ client_key: buffer })) },
             { keys: ["cluster.server"], format: _.flow(_.first, url.parse, ({ host, port, protocol })=> ({ protocol: _.first(protocol.match(/^https?/)), host: _.first(host.match(/[^:]+/)), port: (port || (protocol === "https:" ? 443 : 80)) })) },
             { keys: ["user.username", "user.password"], format: ([username, password])=>({ username, password }) },
-            { keys: ["cluster.insecure-skip-tls-verify"], format: ([value])=> ({ insecure_tls: value }) }
+            { keys: ["cluster.insecure-skip-tls-verify"], format: ([value])=> ({ insecure_tls: value }) },
+            { keys: ["user.auth-provider.config.access-token"], format: ([token])=> ({ token }) }
         ];
 
         let
