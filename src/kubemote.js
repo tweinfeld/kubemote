@@ -115,6 +115,18 @@ module.exports = class Kubemote extends EventEmitter {
         };
     }
 
+    static IN_CLUSTER_CONFIGURATION({
+        baseFolder = "/var/run/secrets/kubernetes.io/serviceaccount"
+    } = {}){
+        let [ token, certificate_authority, namespace ] = ["token", "ca.crt", "namespace"].map(_.flow(_.unary(_.partial(path.join, baseFolder)), fs.readFileSync));
+        return {
+            namespace: namespace.toString('utf8'),
+            certificate_authority,
+            token: token.toString('utf8'),
+            host: "kubernetes"
+        };
+    }
+
     static CONFIGURATION_FILE({
         file = [ ...(process.env["KUBECONFIG"] || "").split(path.delimiter).map(_.trim), path.resolve(os.homedir(), '.kube', 'config') ].filter(Boolean).find(fs.existsSync),
         context: contextName,
