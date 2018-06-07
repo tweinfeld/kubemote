@@ -164,6 +164,14 @@ module.exports = class Kubemote extends EventEmitter {
         return CONFIGURATION_READERS.reduce((ac, { keys, format })=> _.assign(ac, keys.every((keyName)=> _.has(config, keyName)) && format(_.at(config, keys))), { namespace });
     }
 
+    getNamespaces(){
+        const request = this[REQUEST]({
+            path: "/api/v1/namespaces",
+            qs: {}
+        });
+        return endRequestBufferResponse(request).toPromise();
+    }
+
     getServices(selector){
         const request = this[REQUEST]({
             path: "/api/v1/namespaces/${namespace}/services",
