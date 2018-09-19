@@ -231,6 +231,7 @@ module.exports = class Kubemote extends EventEmitter {
     }
 
     getPodLogs({ podName }){
+
         const request = this[REQUEST]({
             path: `/api/v1/namespaces/$\{namespace\}/pods/${podName}/log`
         });

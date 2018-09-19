@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 const
     _ = require('lodash'),
     util = require('util'),
@@ -6,7 +7,10 @@ const
     Table = require('cli-table'),
     Kubemote = require('../src/kubemote');
 
-let cmdLineArgs = yargs
+
+
+let client,cmdLineArgs;
+cmdLineArgs = yargs
     .version(false)
     .usage("$0 --columns [[column identifiers]] --context [context] --deploy [deployment] --namespace [namespace] --format [json|table] --host [host] --port [port] --protocol [http|https]")
     .group(["deployment", "namespace"], 'Query Options:')
@@ -22,13 +26,64 @@ let cmdLineArgs = yargs
         alias: "ns"
     })
     .group(["columns", "format"], 'Report Composition:')
-    .option('columns', {
-        alias: "col",
+    .option('colSize',
+    //  alias: "col",
+    { type: "array",
+      description: "define columns size",
+      coerce: (args)=>{
+        let options = _(args).map((arg)=>{
+          let opts = arg.split(/[,=]/)
+          return [opts[0], ~~opts[1]];
+        }).value();
+        return options;
+      }
+    })
+
+    .option('col', {
+
         type: "array",
-        default: ["name", "desired", "current", "available", "age", "images", "pods"],
+        default:  {default:  {"name": 10,
+          "desired" : 5,
+          "current" : 5,
+          "images" : 40,
+          "pods" : 10,
+          "selectors":10}
+        },
         description: "Columns to include in the report",
-        choices: ["name", "desired", "current", "available", "age", "images", "pods", "selectors"],
-        demandOption: "Please provide a list of required columns"
+        demandOption: "Please provide a list of required columns",
+        coerce: (args)=>{
+
+          const choices =
+          {"name": 10,
+          "desired" : 5,
+          "current" : 5,
+          "available" : 5,
+          "age" : 10,
+          "images" : 40,
+          "pods" : 10,
+          "selectors":10};
+
+           if (_.get(args[0], "default"))
+              return    args[0].default;
+
+
+          if (!args)
+          return choices;
+          const colWidth  = [];
+          _.fill(colWidth, choices.length, 10 )
+;
+          let shownCols = {};
+          _.remove(args, (m)=>{
+                return m.match(/^[,=?]$/g);
+          });
+          let options = _(args).map((arg)=>{
+            let opts = arg.split(/[,=]/)
+            _.set(shownCols, opts[0], !!(~~opts[1])? ~~opts[1] : 10 , 10);
+            return arg;
+          }).value();
+
+          return shownCols;
+        }
     })
     .option('format', {
         description: "Report type",
@@ -42,6 +97,19 @@ let cmdLineArgs = yargs
         type: "number",
         desc: "The port number to use when connecting",
         implies: ["host", "protocol"]
+    })
+    .option('proxy', {
+      description : "use kubectl proxy to connect",
+      //implies: ["host", "port", "protocol"],
+    }).coerce('proxy', (argv)=>{
+
+      opts = _.split(argv ,/[:,/]/g);
+      let proxyOpts = {}
+      _.set(proxyOpts , "protocol", "http")
+      _.set(proxyOpts , "host", opts[0])
+      _.set(proxyOpts , "port", opts[1])
+
+      return proxyOpts;
     })
     .option('host', {
         type: "string",
@@ -61,6 +129,36 @@ let cmdLineArgs = yargs
     })
     .argv;
 
+if (cmdLineArgs.proxy){
+  cmdLineArgs.host = cmdLineArgs.proxy.host;
+  cmdLineArgs.port = ~~(cmdLineArgs.proxy.port);
+  cmdLineArgs.protocol = cmdLineArgs.proxy.protocol;
+}
+
+_(cmdLineArgs).get("colSize", []).forEach((o)=>{
+  _.set(cmdLineArgs.col, o[0], o[1]);
+})
+const progressBar = ((units)=>{
+  const  Progress = require('cli-progress');
+  var progressBar = new Progress.Bar({
+    format: '[{bar}] {percentage}%'
+});
+progressBar.start(100, 0);
+progressBar.finishInterval = false;
+return progressBar;
+})(100)
+let progressCounter = 0;
+let progresStream = kefir.withInterval(100, emitter => {
+
+  if(progressBar.finishInterval) return emitter.end();
+  progressBar.update(progressCounter)
+  progressCounter++;
+  emitter.emit(progressCounter);
+
+});
+progresStream.onEnd(_.noop);
+
+
 const generateDeploymentsReport = function({
     context,
     namespace = "default",
@@ -70,15 +168,16 @@ const generateDeploymentsReport = function({
     port,
     protocol
 }){
-    let client;
+
 
     try {
         client = new Kubemote(_.defaults({ host, port, protocol }, Kubemote.CONFIGURATION_FILE({ namespace, context })));
+        client.setMaxListeners(1000);
     } catch(error){
         return Promise.reject(error);
     }
-
-    return kefir
+    console.log(' collecting data from K8s cluster');
+    let getDeployStream =  kefir
         .fromPromise(client.getDeployments())
         .flatMap((res)=> {
             return kefir.combine(
@@ -101,8 +200,9 @@ const generateDeploymentsReport = function({
                     })
             );
         })
-        .map((report)=>
-            report.map((item)=> {
+        .map((report)=>{
+
+            return report.map((item)=> {
                 let [name, replicas, updatedReplicas, unavailableReplicas, creationTimestamp, containers, podNames, labels] = _.zipWith(_.at(item, [
                     "deploy.metadata.name",
                     "deploy.status.replicas",
@@ -135,16 +235,20 @@ const generateDeploymentsReport = function({
                     pods: podNames
                 });
             })
-        )
-        .mapErrors(({ message = "Unspecified" } = {}) => message)
-        .takeErrors(1)
-        .toPromise();
-};
+        })
+        .mapErrors((e) => _.identity(e))
+        .takeErrors(1);
 
+      getDeployStream.onEnd(_.noop);
+
+
+        return getDeployStream.toPromise();
+};
+const listImages = require('./probe_images').listImages;
 const reportFormatters = {
     "json": (columns, rawReport)=> util.inspect(rawReport.map((row)=> _.pick(row, columns)), { depth: 10 }),
     "table": (function(){
-            const timeSpanFormatter = (function(){
+        const timeSpanFormatter = (function(){
                 const
                     MIL_IN_SEC = 1000,
                     MIL_IN_MIN = 60 * MIL_IN_SEC,
@@ -175,14 +279,42 @@ const reportFormatters = {
             "current": { caption: "Current" },
             "available":  { caption: "Available" },
             "age": { caption: "Age", formatter: timeSpanFormatter },
-            "images": { caption: "Images(s)", formatter: (containers)=> containers.map(({image})=> _.truncate(image, { length: 80 })).join('\n') },
+            "images": { caption: "Images(s)", formatter: (containers, imagesList)=>{
+
+               let all = containers.map(({image})=>{
+               //let truncatedImage = _.truncate(image, { length: 80 });
+               let tags =  _.filter(imagesList, (i)=>{
+                   //console.log(`${image}-${util.format(i)} , ${i.RepoTags}`);
+                  return _(i.RepoTags).some((tag)=> tag === image)
+            }).map((i)=>i.Labels);
+
+            return image + "\nlabels : \n======\n" + _.chain(tags)
+            .head()
+            .map((v, k)=>{
+              return `${k}=${v}`
+            }).join('\n')
+          })
+             return all.join('\n');
+        }
+      },
             "pods": { caption: "Pod(s)", formatter: (podNames)=> podNames.map((pod)=> _.truncate(pod, { length: 50 })).join('\n') },
             "selectors": { caption: "Selectors", formatter: (labels)=> _.truncate(_.map(labels, (v, k) => `${k}=${v}`).join('\n'), { length: 100 }) }
         };
 
         return function(columns, rawReport){
-            let table = new Table({ head: columns.map((columnName)=> columnsFormats[columnName]["caption"]) });
-            rawReport.forEach((row)=> table.push(columns.map((columnName)=> (columnsFormats[columnName].formatter || _.identity)(row[columnName]))));
+
+            let table = new Table(
+              { head: _.map(columns , (width , col)=> {
+                  return columnsFormats[col]["caption"]
+                })
+
+              , colWidths: _.values(columns)
+
+          });
+            rawReport.forEach((row)=> table.push(_.map(columns,
+              (width, columnName)=>
+              (columnsFormats[columnName].formatter || _.identity)(row[columnName],
+                 rawReport.imagesList)))) ;
             return table.toString();
         };
     })()
@@ -192,9 +324,30 @@ const reportFormatters = {
 generateDeploymentsReport(
     Object.assign(
         _.pick(cmdLineArgs, ["namespace", "deployment", "context"]),
-        { extended: cmdLineArgs["col"].some((selectedColumn)=> ["pods", "images"].includes(selectedColumn)) },
+        { extended: _(cmdLineArgs["col"]).keys().some((selectedColumn)=> ["pods", "images"].includes(selectedColumn))},
         _.at(cmdLineArgs, ["port", "host", "protocol"]).some(Boolean) && _.pick(cmdLineArgs, ["port", "host", "protocol"])
     ))
-    .then(_.partial(reportFormatters[cmdLineArgs["format"]], _.uniq(["name", ...cmdLineArgs["col"]])))
+
+    .then((report)=>{
+       console.log(' collecting image metadata ...');
+      if (!cmdLineArgs["col"].images) return report;
+
+      return listImages({waitPeriod:200000}).scan((prev , next)=>{
+        prev.push(next);
+        return prev;
+      }, []).toPromise().then((images)=>{
+          report.imagesList = images;
+          return report;
+      })
+
+    })
+    .then(_.partial(reportFormatters[cmdLineArgs["format"]], cmdLineArgs["col"] || {name:10}))
+    .then((report)=>{
+      progressBar.update(100);
+      progressBar.finishInterval = true;
+      progressBar.stop();
+      console.log(' Report is ready!');
+      return report;
+    })
     .then(console.log)
     .catch(console.warn);
