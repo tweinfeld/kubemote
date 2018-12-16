@@ -188,6 +188,17 @@ module.exports = class Kubemote extends EventEmitter {
 
         return endRequestBufferResponse(request).toPromise();
     }
+
+    getConfigMaps(selector){
+        const request = this[REQUEST]({
+            path: "/api/v1/namespaces/${namespace}/configmaps",
+            qs: { includeUninitialized: true, watch: false, labelSelector: serializeSelectorQuery(selector) }
+        });
+
+        return endRequestBufferResponse(request).toPromise();
+
+    }
+
     getReplicaSets(selector){
       // /apis/extensions/v1beta1/namespaces/{namespace}/replicasets/{name}
       const request = this[REQUEST]({
@@ -197,6 +208,7 @@ module.exports = class Kubemote extends EventEmitter {
 
       return endRequestBufferResponse(request).toPromise();
     }
+
     getDeployments(selector){
         const request = this[REQUEST]({
             path: "/apis/apps/v1beta1/namespaces/$\{namespace\}/deployments",
@@ -230,6 +242,16 @@ module.exports = class Kubemote extends EventEmitter {
         return endRequestBufferResponse(request).toPromise();
     }
 
+    deleteConfigMap({ name }){
+        const request = this[REQUEST]({
+            method: "DELETE",
+            path: `/api/v1/namespaces/$\{namespace\}/configmaps/${name}`,
+            headers: { "Accept": "application/json", "Content-Length": 0 }
+        });
+
+        return endRequestBufferResponse(request).toPromise();
+    }
+
     getPodLogs({ podName }){
         const request = this[REQUEST]({
             path: `/api/v1/namespaces/$\{namespace\}/pods/${podName}/log`
@@ -254,6 +276,17 @@ module.exports = class Kubemote extends EventEmitter {
         const request = this[REQUEST]({
             method: "POST",
             path: "/apis/batch/v1/namespaces/${namespace}/jobs",
+            headers: { "Content-Type": "application/json", "Content-Length": byteSpec.length }
+        });
+
+        return endRequestBufferResponse(request, byteSpec).toPromise();
+    }
+
+    createConfigMap(configMapSpecJson){
+        let byteSpec = Buffer.from(JSON.stringify(configMapSpecJson), 'utf8');
+        const request = this[REQUEST]({
+            method: "POST",
+            path: "/api/v1/namespaces/${namespace}/configmaps",
             headers: { "Content-Type": "application/json", "Content-Length": byteSpec.length }
         });
 
