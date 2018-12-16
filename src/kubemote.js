@@ -189,6 +189,15 @@ module.exports = class Kubemote extends EventEmitter {
         return endRequestBufferResponse(request).toPromise();
     }
 
+    getConfigMap({ name }){
+        const request = this[REQUEST]({
+            path: `/api/v1/namespaces/$\{namespace\}/configmaps/${name}`,
+            //qs: { includeUninitialized: true, watch: false }
+        });
+
+        return endRequestBufferResponse(request).toPromise();
+    }
+
     getConfigMaps(selector){
         const request = this[REQUEST]({
             path: "/api/v1/namespaces/${namespace}/configmaps",
@@ -196,7 +205,6 @@ module.exports = class Kubemote extends EventEmitter {
         });
 
         return endRequestBufferResponse(request).toPromise();
-
     }
 
     getReplicaSets(selector){
