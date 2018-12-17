@@ -301,6 +301,17 @@ module.exports = class Kubemote extends EventEmitter {
         return endRequestBufferResponse(request, byteSpec).toPromise();
     }
 
+    updateConfigMap(configMapSpecJson){
+        let byteSpec = Buffer.from(JSON.stringify(configMapSpecJson), 'utf8');
+        const request = this[REQUEST]({
+            method: "PUT",
+            path: `/api/v1/namespaces/$\{namespace\}/configmaps/${_.get(configMapSpecJson, 'metadata.name')}`,
+            headers: { "Content-Type": "application/json", "Content-Length": byteSpec.length }
+        });
+
+        return endRequestBufferResponse(request, byteSpec).toPromise();
+    }
+
     watchDeploymentList(selector){
         return Promise.resolve(createRequestSendWatchEvents.call(this, {
             method: "GET",
