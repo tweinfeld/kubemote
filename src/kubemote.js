@@ -363,6 +363,17 @@ module.exports = class Kubemote extends EventEmitter {
         }));
     }
 
+    deletePod({ podName }){
+        const request = this[REQUEST]({
+            method: "DELETE",
+            path: `/api/v1/namespaces/$\{namespace\}/pods/${podName}`,
+            headers: { "Accept": "application/json", "Content-Length": 0 },
+            qs: { gracePeriodSeconds: 0 }
+        });
+
+        return endRequestBufferResponse(request).toPromise();
+    }
+
     deleteJob({ jobName }){
         const request = this[REQUEST]({
             method: "DELETE",
