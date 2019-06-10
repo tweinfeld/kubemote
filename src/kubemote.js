@@ -268,6 +268,17 @@ module.exports = class Kubemote extends EventEmitter {
         return endRequestBufferResponse(request).toPromise();
     }
 
+    createPod(podSpecJson){
+        let byteSpec = Buffer.from(JSON.stringify(podSpecJson), 'utf8');
+        const request = this[REQUEST]({
+            method: "POST",
+            path: "/api/v1/namespaces/$\{namespace\}/pods",
+            headers: { "Content-Type": "application/json", "Content-Length": byteSpec.length }
+        });
+
+        return endRequestBufferResponse(request, byteSpec).toPromise();
+    }
+
     createDeployment(deploymentSpecJson){
         let byteSpec = Buffer.from(JSON.stringify(deploymentSpecJson), 'utf8');
         const request = this[REQUEST]({
