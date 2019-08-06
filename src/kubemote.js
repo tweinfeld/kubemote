@@ -260,9 +260,10 @@ module.exports = class Kubemote extends EventEmitter {
         return endRequestBufferResponse(request).toPromise();
     }
 
-    getPodLogs({ podName }){
+    getPodLogs({ podName, follow = true }){
         const request = this[REQUEST]({
-            path: `/api/v1/namespaces/$\{namespace\}/pods/${podName}/log`
+            path: `/api/v1/namespaces/$\{namespace\}/pods/${podName}/log`,
+            qs: { follow }
         });
 
         return endRequestBufferResponse(request).toPromise();
