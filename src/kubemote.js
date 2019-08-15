@@ -123,7 +123,7 @@ module.exports = class Kubemote extends EventEmitter {
             namespace: namespace.toString('utf8'),
             certificate_authority,
             token: token.toString('utf8'),
-            host: "kubernetes"
+            host: "kubernetes.default.svc"
         };
     }
 
