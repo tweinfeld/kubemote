@@ -332,11 +332,11 @@ module.exports = class Kubemote extends EventEmitter {
         }));
     }
 
-    watchPodLogs({ podName }){
+    watchPodLogs({ podName, tailLines = 0 }){
         return Promise.resolve(createRequestSendWatchEvents.call(this, {
             method: "GET",
             path: `/api/v1/namespaces/$\{namespace\}/pods/${podName}/log`,
-            qs: { follow: true }
+            qs: { follow: true, tailLines }
         }));
     }
 
