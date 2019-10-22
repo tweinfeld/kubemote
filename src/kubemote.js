@@ -372,6 +372,15 @@ module.exports = class Kubemote extends EventEmitter {
         }));
     }
 
+    getJobs(selector){
+        const request = this[REQUEST]({
+            path: `/apis/batch/v1/namespaces/$\{namespace\}/jobs`,
+            qs: { watch: false, labelSelector: serializeSelectorQuery(selector) }
+        });
+
+        return endRequestBufferResponse(request).toPromise();
+    }
+
     deletePod({ podName }){
         const request = this[REQUEST]({
             method: "DELETE",
